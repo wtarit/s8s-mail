@@ -276,7 +276,7 @@ export class JmapStore {
   }
 
   private validateName(name: string): StoreError | null {
-    if (name.trim() === "" || name.length > MAX_MAILBOX_NAME || /[\u0000-\u001f]/.test(name)) {
+    if (name.trim() === "" || name.length > MAX_MAILBOX_NAME || [...name].some((ch) => ch.charCodeAt(0) < 32)) {
       return {
         type: "invalidProperties",
         properties: ["name"],
@@ -565,7 +565,7 @@ export class JmapStore {
     const bodyCols = withBody ? ", e.body_structure, e.text_body, e.html_body, e.attachments" : "";
     const rows = this.all(
       `SELECT e.id, e.blob_id, e.thread_id, e.size, e.received_at, e.sent_at, e.message_id,
-         e.in_reply_to, e."references" AS refs, e.subject, e."from" AS from_, e.sender, e."to" AS to_,
+         e.in_reply_to, e."references" AS refs, e.subject, e."from" AS fromCol, e.sender, e."to" AS toCol,
          e.cc, e.bcc, e.reply_to, e.preview, e.has_attachment, e.parse_state${bodyCols}
        FROM email e WHERE e.id IN (SELECT value FROM json_each(?))`,
       idJson,
@@ -600,9 +600,9 @@ export class JmapStore {
         inReplyTo: json<string[]>(r.in_reply_to),
         references: json<string[]>(r.refs),
         subject: (r.subject as string | null) ?? null,
-        from: json<EmailAddress[]>(r.from_),
+        from: json<EmailAddress[]>(r.fromCol),
         sender: json<EmailAddress[]>(r.sender),
-        to: json<EmailAddress[]>(r.to_),
+        to: json<EmailAddress[]>(r.toCol),
         cc: json<EmailAddress[]>(r.cc),
         bcc: json<EmailAddress[]>(r.bcc),
         replyTo: json<EmailAddress[]>(r.reply_to),
@@ -848,7 +848,7 @@ export class JmapStore {
 
   emailForSubmission(emailId: string): EmailForSubmission | null {
     const r = this.first(
-      `SELECT id, blob_id, thread_id, size, "from" AS from_, sender, "to" AS to_, cc, bcc,
+      `SELECT id, blob_id, thread_id, size, "from" AS fromCol, sender, "to" AS toCol, cc, bcc,
          attachments, parse_state FROM email WHERE id = ?`,
       emailId,
     );
@@ -859,9 +859,9 @@ export class JmapStore {
       blobId: r.blob_id as string,
       threadId: r.thread_id as string,
       size: r.size as number,
-      from: json<EmailAddress[]>(r.from_) ?? [],
+      from: json<EmailAddress[]>(r.fromCol) ?? [],
       sender: json<EmailAddress[]>(r.sender) ?? [],
-      to: json<EmailAddress[]>(r.to_) ?? [],
+      to: json<EmailAddress[]>(r.toCol) ?? [],
       cc: json<EmailAddress[]>(r.cc) ?? [],
       bcc: json<EmailAddress[]>(r.bcc) ?? [],
       attachmentBytes:
