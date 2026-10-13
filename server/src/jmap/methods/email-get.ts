@@ -2,7 +2,6 @@ import { z } from "zod";
 import { MethodError } from "../errors";
 import { parseMessage, type ParsedBody } from "../../store/parse";
 import { blobKey } from "../../store/blob";
-import type { EmailRow } from "../../store/jmap-types";
 import type { BodyPart, EmailAddress } from "../../store/types";
 import type { MethodContext } from "../context";
 import {
@@ -15,9 +14,8 @@ import {
 import type { MethodDef } from "../registry";
 import { CAP_MAIL, LIMITS } from "../types";
 import { checkCount, utcDate } from "../util";
-import { getArgs, parseArgs } from "./helpers";
+import { changesArgs, getArgs, parseArgs } from "./helpers";
 import { changesResponse } from "./mailbox";
-import { changesArgs } from "./helpers";
 
 const SCALAR_PROPERTIES = [
   "id",

@@ -87,6 +87,13 @@ const queryArgs = z.object({
   calculateTotal: z.boolean().optional(),
 });
 
+function filterDate(v: string | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  const t = Date.parse(v);
+  if (Number.isNaN(t)) throw new MethodError("invalidArguments", "Invalid date-time in filter");
+  return t;
+}
+
 async function submissionQuery(ctx: MethodContext, raw: Record<string, unknown>) {
   const args = parseArgs(queryArgs, raw);
   const accountId = ctx.account(raw);
@@ -96,22 +103,16 @@ async function submissionQuery(ctx: MethodContext, raw: Record<string, unknown>)
     }
   }
   const f = args.filter ?? {};
-  const date = (v: string | undefined) => {
-    if (v === undefined) return {};
-    const t = Date.parse(v);
-    if (Number.isNaN(t)) throw new MethodError("invalidArguments", "Invalid date-time in filter");
-    return t;
-  };
-  const before = date(f.before);
-  const after = date(f.after);
+  const before = filterDate(f.before);
+  const after = filterDate(f.after);
   const r = await ctx.stub(accountId).submissionQuery({
     filter: {
       ...(f.identityIds ? { identityIds: f.identityIds } : {}),
       ...(f.emailIds ? { emailIds: f.emailIds.map((i) => ctx.resolveId(i)) } : {}),
       ...(f.threadIds ? { threadIds: f.threadIds } : {}),
       ...(f.undoStatus ? { undoStatus: f.undoStatus } : {}),
-      ...(typeof before === "number" ? { before } : {}),
-      ...(typeof after === "number" ? { after } : {}),
+      ...(before !== undefined ? { before } : {}),
+      ...(after !== undefined ? { after } : {}),
     },
     sortAscending: args.sort?.[0]?.isAscending ?? true,
     position: args.position ?? 0,

@@ -124,6 +124,10 @@ function domainOf(email: string | undefined, fallback: string): string {
     : fallback;
 }
 
+const strip = (l: string[] | null | undefined) => (l ?? []).map((i) => i.replace(/^<|>$/g, ""));
+const norm = (l: { name?: string | null; email: string }[] | null | undefined) =>
+  (l ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
+
 /** Builds the MIME message, stores it in R2 and inserts it into the account DO. */
 async function createEmail(
   ctx: MethodContext,
@@ -272,9 +276,6 @@ async function createEmail(
   const blobId = newMessageBlobId();
   const key = blobKey(accountId, blobId);
   await ctx.env.BLOBS.put(key, built.raw, { httpMetadata: { contentType: "message/rfc822" } });
-  const strip = (l: string[] | null | undefined) => (l ?? []).map((i) => i.replace(/^<|>$/g, ""));
-  const norm = (l: { name?: string | null; email: string }[] | null | undefined) =>
-    (l ?? []).map((a) => ({ name: a.name ?? null, email: a.email }));
   const r = await ctx.stub(accountId).emailCreate({
     accountId,
     blobId,
@@ -303,6 +304,12 @@ async function createEmail(
   return { created: { id: r.emailId, blobId, threadId: r.threadId, size: built.size } };
 }
 
+const invalid = (key: string, description: string): SetError => ({
+  type: "invalidProperties",
+  properties: [key],
+  description,
+});
+
 /** Turns a PatchObject (or full-value update) into store operations. */
 function parseUpdate(
   ctx: MethodContext,
@@ -316,11 +323,6 @@ function parseUpdate(
   let kwPatch = false;
   let mbWhole = false;
   let mbPatch = false;
-  const invalid = (key: string, description: string): SetError => ({
-    type: "invalidProperties",
-    properties: [key],
-    description,
-  });
   for (const [key, value] of Object.entries(patch)) {
     if (key === "keywords") {
       const list = keywordList(value as Record<string, boolean>);

@@ -66,7 +66,7 @@ export class MethodContext {
         .where(eq(address.accountId, accountId))
         .all()
         .then((rows) =>
-          rows.sort((a, b) =>
+          rows.toSorted((a, b) =>
             a.kind === b.kind ? a.address.localeCompare(b.address) : a.kind === "primary" ? -1 : 1,
           ),
         );
