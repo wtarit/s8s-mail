@@ -49,5 +49,11 @@
     "APP_NAME": "S8S Mail",
     "MAIL_PROVIDER": "mailgun",
     "MAILGUN_REGION": "us",
+    // Sending domain configured at the provider (Mailgun) — TODO(deploy): real value in the local deploy config.
+    "MAILGUN_DOMAIN": "example.com",
+    // From header for system mail (magic links, invites) — TODO(deploy).
+    "SYSTEM_MAIL_FROM": "S8S Mail <no-reply@example.com>",
+    // Public origin of this Worker (Better Auth baseURL / OIDC issuer) — TODO(deploy).
+    "PUBLIC_URL": "http://localhost:8787",
   },
 }
