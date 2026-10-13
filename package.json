@@ -1,0 +1,12 @@
+{
+  "name": "s8s-mail",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "wrangler": "wrangler"
+  },
+  "devDependencies": {
+    "wrangler": "^4.149.0"
+  }
+}
