@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.4.0",
+    "@s8s/web": "workspace:*",
     "@types/node": "^26.6.5",
     "drizzle-kit": "^0.31.11",
     "typescript": "7.0.2",

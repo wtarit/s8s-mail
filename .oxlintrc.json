@@ -15,6 +15,7 @@
     "typescript/no-explicit-any": "warn",
     "typescript/consistent-type-imports": "error",
     "import/no-duplicates": "error",
+    "import/no-unassigned-import": "off",
     "react/react-in-jsx-scope": "off",
     "react/jsx-key": "error"
   },

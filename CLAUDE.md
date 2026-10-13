@@ -10,7 +10,17 @@ pnpm workspace, **flat, with no `apps/` or `packages/` nesting**:
 - `shared/`: types and schemas shared between server and web.
 - `docs/research/`: dated research notes and open questions. Not authoritative (see "Docs convention").
 
-Only the workspace root exists so far: `package.json`, and `pnpm-workspace.yaml` with wrangler as a dev dependency. Add build/test/deploy commands here as packages land.
+Commands (run from the repo root; Node 22.22+ and pnpm 11):
+- `pnpm install`
+- `pnpm dev`: `wrangler dev` on http://localhost:8787 (Worker + `web/dist` assets). For SPA hot reload run `pnpm --filter @s8s/web dev` (Vite, proxies `/api`, `/jmap`, `/.well-known` to :8787).
+- `pnpm build`: builds `shared`, then `web` (→ `web/dist`), then a `wrangler deploy --dry-run` of `server`. Deploy is `pnpm --filter @s8s/server deploy`.
+- `pnpm lint` (oxlint), `pnpm format` / `pnpm format:check` (oxfmt), `pnpm typecheck`, `pnpm test` (vitest in every package; `server` runs inside workerd via `@cloudflare/vitest-plugin`).
+- Per package: `pnpm --filter @s8s/server test`, `pnpm --filter @s8s/web test`, etc.
+- Server DB (in `server/`; or `pnpm --filter @s8s/server <script>`):
+  - `db:generate:d1`: D1 schema `src/db/schema.ts` → `drizzle/d1/` (applied with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy).
+  - `db:generate:do`: account-DO schema `src/store/schema.ts` → `drizzle/do/` (run by `AccountDO` on startup).
+  - `cf-typegen`: regenerates the committed `worker-configuration.d.ts` after any `wrangler.jsonc` change.
+- `wrangler.jsonc` holds placeholder resource ids (`TODO(deploy)`); never run `wrangler d1 create`, `r2 bucket create` or `deploy` without the owner's say-so.
 
 ## Stack (decided)
 
