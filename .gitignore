@@ -156,3 +156,7 @@ vite.config.ts.timestamp-*
 # Personal / test-environment notes for Claude (never commit)
 CLAUDE.local.md
 !.dev.vars.example
+
+# Local deploy config with real ids/hostnames (never commit)
+wrangler.local.jsonc
+.deploy.secrets.env
