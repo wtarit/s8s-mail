@@ -2,7 +2,8 @@
 import type { AccountDO } from "../store/account-do";
 
 /** Set on the request context by the auth middleware (`jmapAuth`). */
-export type Principal = { userId: string; email: string; accountIds: string[] };
+export type { Principal } from "../auth/types";
+import type { Principal } from "../auth/types";
 
 /** Hono environment for the JMAP sub-app. */
 export type JmapEnv = { Bindings: Env; Variables: { principal: Principal } };

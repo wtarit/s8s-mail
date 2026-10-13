@@ -4,6 +4,8 @@ import { api } from "./api/routes";
 import { authServerMetadata, getAuth, openIdConfig } from "./auth";
 import { runWithWaitUntil } from "./auth/request-context";
 import type { AppEnv } from "./auth/types";
+import { jmapAuth } from "./auth/jmap-auth";
+import { jmapApp, wellKnownJmap } from "./jmap";
 import { handleEmail } from "./mail/ingest";
 
 export { AccountDO } from "./store/account-do";
@@ -52,7 +54,10 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => (await getAuth(c.env)).handl
 // Our own REST API (see shared/src/api.ts).
 app.route("/api", api);
 
-// TODO(jmap): app.use("/jmap/*", jmapAuth) and mount the JMAP routes.
+// JMAP (RFC 8620/8621): session discovery, API, upload/download, event source.
+app.get("/.well-known/jmap", wellKnownJmap);
+app.use("/jmap/*", jmapAuth);
+app.route("/jmap", jmapApp);
 
 export default {
   fetch: app.fetch,
