@@ -276,7 +276,11 @@ export class JmapStore {
   }
 
   private validateName(name: string): StoreError | null {
-    if (name.trim() === "" || name.length > MAX_MAILBOX_NAME || [...name].some((ch) => ch.charCodeAt(0) < 32)) {
+    if (
+      name.trim() === "" ||
+      name.length > MAX_MAILBOX_NAME ||
+      [...name].some((ch) => ch.charCodeAt(0) < 32)
+    ) {
       return {
         type: "invalidProperties",
         properties: ["name"],
