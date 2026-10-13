@@ -1,9 +1,10 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import { wellKnownJmap } from "../src/jmap";
 import { Hono } from "hono";
 import { maxAttachmentBytes, getSendProvider } from "../src/send";
-import { call, setupAccount, testApp, USING } from "./helpers/jmap";
+import { call, setupAccount, type testApp, USING } from "./helpers/jmap";
 
 describe("JMAP session", () => {
   it("advertises capabilities, limits and URLs", async () => {
@@ -13,7 +14,7 @@ describe("JMAP session", () => {
     const s = (await res.json()) as any;
     const limit = maxAttachmentBytes(getSendProvider(env));
 
-    expect(Object.keys(s.capabilities).sort()).toEqual([
+    expect(Object.keys(s.capabilities).toSorted()).toEqual([
       "urn:ietf:params:jmap:core",
       "urn:ietf:params:jmap:mail",
       "urn:ietf:params:jmap:submission",
@@ -76,10 +77,10 @@ describe("JMAP session", () => {
   });
 });
 
-describe("JMAP request envelope", () => {
-  const post = (app: ReturnType<typeof testApp>, body: BodyInit, type = "application/json") =>
-    app.request("/jmap/api", { method: "POST", headers: { "content-type": type }, body }, env);
+const post = (app: ReturnType<typeof testApp>, body: BodyInit, type = "application/json") =>
+  app.request("/jmap/api", { method: "POST", headers: { "content-type": type }, body }, env);
 
+describe("JMAP request envelope", () => {
   it("rejects bad envelopes with request errors", async () => {
     const { app } = await setupAccount("env-1", ["env1@example.com"]);
     let res = await post(app, "{not json");
@@ -121,7 +122,11 @@ describe("JMAP request envelope", () => {
       ["Foo/bar", { accountId }, "c"],
       ["Mailbox/get", { accountId: "someone-else" }, "d"],
       ["Mailbox/get", { accountId }, "e"],
-      ["Thread/get", { accountId, ids: ["x"], "#ids": { resultOf: "zz", name: "X/y", path: "/a" } }, "f"],
+      [
+        "Thread/get",
+        { accountId, ids: ["x"], "#ids": { resultOf: "zz", name: "X/y", path: "/a" } },
+        "f",
+      ],
     ]);
     const m = r.methodResponses;
     expect(m[0]).toEqual(["Core/echo", { hello: "world" }, "a"]);
@@ -146,10 +151,26 @@ describe("JMAP request envelope", () => {
       app,
       [
         ["Mailbox/query", { accountId, filter: { role: "inbox" } }, "q"],
-        ["Mailbox/get", { accountId, "#ids": { resultOf: "q", name: "Mailbox/query", path: "/ids" } }, "g"],
-        ["Mailbox/get", { accountId, "#ids": { resultOf: "q", name: "Mailbox/get", path: "/ids" } }, "bad"],
-        ["Mailbox/get", { accountId, "#ids": { resultOf: "g", name: "Mailbox/get", path: "/list/*/id" } }, "star"],
-        ["Mailbox/get", { accountId, "#ids": { resultOf: "g", name: "Mailbox/get", path: "/nothing" } }, "miss"],
+        [
+          "Mailbox/get",
+          { accountId, "#ids": { resultOf: "q", name: "Mailbox/query", path: "/ids" } },
+          "g",
+        ],
+        [
+          "Mailbox/get",
+          { accountId, "#ids": { resultOf: "q", name: "Mailbox/get", path: "/ids" } },
+          "bad",
+        ],
+        [
+          "Mailbox/get",
+          { accountId, "#ids": { resultOf: "g", name: "Mailbox/get", path: "/list/*/id" } },
+          "star",
+        ],
+        [
+          "Mailbox/get",
+          { accountId, "#ids": { resultOf: "g", name: "Mailbox/get", path: "/nothing" } },
+          "miss",
+        ],
         ["Mailbox/set", { accountId, create: { k1: { name: "Projects" } } }, "s"],
         ["Mailbox/set", { accountId, create: { k2: { name: "Sub", parentId: "#k1" } } }, "s2"],
       ],

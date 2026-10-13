@@ -1,9 +1,9 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { accountStub } from "../src/store/subscribe";
 import { call, deliver, resp, setupAccount } from "./helpers/jmap";
-
 
 async function inboxState(app: any, accountId: string, inbox: string) {
   const r = await call(app, [["Mailbox/get", { accountId, ids: [inbox] }, "m"]]);
@@ -106,7 +106,11 @@ describe("mailboxes, emails and counts", () => {
         },
         "g",
       ],
-      ["Thread/get", { accountId, "#ids": { resultOf: "g", name: "Email/get", path: "/list/*/threadId" } }, "t"],
+      [
+        "Thread/get",
+        { accountId, "#ids": { resultOf: "g", name: "Email/get", path: "/list/*/threadId" } },
+        "t",
+      ],
     ]);
     const list = resp(g, 1).args.list;
     expect(list.map((e: any) => e.subject)).toEqual(["First", "Re: First", "Other"]);
@@ -140,26 +144,42 @@ describe("mailboxes, emails and counts", () => {
     const trunc = await call(app, [
       [
         "Email/get",
-        { accountId, ids: [first.id], properties: ["bodyValues"], fetchTextBodyValues: true, maxBodyValueBytes: 5 },
+        {
+          accountId,
+          ids: [first.id],
+          properties: ["bodyValues"],
+          fetchTextBodyValues: true,
+          maxBodyValueBytes: 5,
+        },
         "g",
       ],
     ]);
-    expect(resp(trunc).args.list[0].bodyValues[partId]).toMatchObject({ value: "Hello", isTruncated: true });
+    expect(resp(trunc).args.list[0].bodyValues[partId]).toMatchObject({
+      value: "Hello",
+      isTruncated: true,
+    });
   });
 
   it("$seen patch moves unread counts and shows up in Mailbox/changes (counts only)", async () => {
     const { app, accountId, box } = await setupAccount("jm-2", ["jm-2@example.com"]);
     const inbox = box("inbox");
-    await deliver(accountId, `${accountId}@example.com`, { subject: "One", messageId: "<s1@example.com>" });
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Two", messageId: "<s2@example.com>" });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "One",
+      messageId: "<s1@example.com>",
+    });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Two",
+      messageId: "<s2@example.com>",
+    });
     const before = await call(app, [
       ["Mailbox/get", { accountId, ids: [inbox] }, "m"],
       ["Email/query", { accountId }, "q"],
     ]);
     const mbState = resp(before, 0).args.state;
     const [e1] = resp(before, 1).args.ids;
-    const emailState = (await call(app, [["Email/get", { accountId, ids: [e1], properties: ["id"] }, "g"]]))
-      .methodResponses[0]![1].state;
+    const emailState = (
+      await call(app, [["Email/get", { accountId, ids: [e1], properties: ["id"] }, "g"]])
+    ).methodResponses[0]![1].state;
 
     const set = await call(app, [
       ["Email/set", { accountId, update: { [e1]: { "keywords/$seen": true } } }, "s"],
@@ -187,18 +207,29 @@ describe("mailboxes, emails and counts", () => {
     expect(resp(again).args.oldState).toBe(resp(again).args.newState);
 
     // un-seen it again, with a whole-keywords replacement
-    await call(app, [["Email/set", { accountId, update: { [e1]: { keywords: { "$flagged": true } } } }, "s"]]);
-    const g = await call(app, [["Email/get", { accountId, ids: [e1], properties: ["keywords"] }, "g"]]);
-    expect(resp(g).args.list[0].keywords).toEqual({ "$flagged": true });
+    await call(app, [
+      ["Email/set", { accountId, update: { [e1]: { keywords: { $flagged: true } } } }, "s"],
+    ]);
+    const g = await call(app, [
+      ["Email/get", { accountId, ids: [e1], properties: ["keywords"] }, "g"],
+    ]);
+    expect(resp(g).args.list[0].keywords).toEqual({ $flagged: true });
     const unread = await inboxState(app, accountId, inbox);
     expect(unread.list[0].unreadEmails).toBe(2);
   });
 
   it("Email/changes collapses per object (delivery = created) and reports destroyed", async () => {
     const { app, accountId, box } = await setupAccount("jm-3", ["jm-3@example.com"]);
-    const state0 = (await call(app, [["Email/get", { accountId, ids: [] }, "g"]])).methodResponses[0]![1].state;
-    await deliver(accountId, `${accountId}@example.com`, { subject: "A", messageId: "<c1@example.com>" });
-    await deliver(accountId, `${accountId}@example.com`, { subject: "B", messageId: "<c2@example.com>" });
+    const state0 = (await call(app, [["Email/get", { accountId, ids: [] }, "g"]]))
+      .methodResponses[0]![1].state;
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "A",
+      messageId: "<c1@example.com>",
+    });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "B",
+      messageId: "<c2@example.com>",
+    });
     const q = await call(app, [["Email/query", { accountId }, "q"]]);
     const ids: string[] = resp(q).args.ids;
     const ch = await call(app, [["Email/changes", { accountId, sinceState: state0 }, "c"]]);
@@ -207,7 +238,13 @@ describe("mailboxes, emails and counts", () => {
     expect(resp(ch).args.destroyed).toEqual([]);
     const mid = resp(ch).args.newState;
 
-    await call(app, [["Email/set", { accountId, update: { [ids[0]!]: { [`mailboxIds/${box("trash")}`]: true } } }, "s"]]);
+    await call(app, [
+      [
+        "Email/set",
+        { accountId, update: { [ids[0]!]: { [`mailboxIds/${box("trash")}`]: true } } },
+        "s",
+      ],
+    ]);
     await call(app, [["Email/set", { accountId, destroy: [ids[1]!] }, "d"]]);
     const ch2 = await call(app, [["Email/changes", { accountId, sinceState: mid }, "c"]]);
     expect(resp(ch2).args).toMatchObject({ created: [], updated: [ids[0]], destroyed: [ids[1]] });
@@ -219,14 +256,19 @@ describe("mailboxes, emails and counts", () => {
 
     const bad = await call(app, [["Email/changes", { accountId, sinceState: "999999" }, "c"]]);
     expect(resp(bad).args.type).toBe("cannotCalculateChanges");
-    const maxed = await call(app, [["Email/changes", { accountId, sinceState: state0, maxChanges: 1 }, "c"]]);
+    const maxed = await call(app, [
+      ["Email/changes", { accountId, sinceState: state0, maxChanges: 1 }, "c"],
+    ]);
     expect(resp(maxed).args.hasMoreChanges).toBe(true);
     expect(resp(maxed).args.created).toHaveLength(1);
   });
 
   it("serves bodies of unparsed (pending) messages through the on-demand fallback", async () => {
     const { app, accountId } = await setupAccount("jm-4", ["jm-4@example.com"]);
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Pending", text: "not yet parsed body" });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Pending",
+      text: "not yet parsed body",
+    });
     const q = await call(app, [["Email/query", { accountId }, "q"]]);
     const id = resp(q).args.ids[0];
     // Put the row back into the state ingest leaves it in (the alarm races the test otherwise).
@@ -238,7 +280,12 @@ describe("mailboxes, emails and counts", () => {
     const g = await call(app, [
       [
         "Email/get",
-        { accountId, ids: [id], properties: ["subject", "preview", "textBody", "bodyValues"], fetchTextBodyValues: true },
+        {
+          accountId,
+          ids: [id],
+          properties: ["subject", "preview", "textBody", "bodyValues"],
+          fetchTextBodyValues: true,
+        },
         "g",
       ],
     ]);
@@ -246,13 +293,18 @@ describe("mailboxes, emails and counts", () => {
     expect(e.subject).toBe("Pending");
     expect(Object.values(e.bodyValues)[0]).toMatchObject({ value: "not yet parsed body\n" });
     // list properties only: no body work, empty preview until the alarm ran
-    const light = await call(app, [["Email/get", { accountId, ids: [id], properties: ["preview"] }, "g"]]);
+    const light = await call(app, [
+      ["Email/get", { accountId, ids: [id], properties: ["preview"] }, "g"],
+    ]);
     expect(resp(light).args.list[0].preview).toBe("");
   });
 
   it("supports header:* forms and headers", async () => {
     const { app, accountId } = await setupAccount("jm-5", ["jm-5@example.com"]);
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Hdr", messageId: "<h1@example.com>" });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Hdr",
+      messageId: "<h1@example.com>",
+    });
     const id = resp(await call(app, [["Email/query", { accountId }, "q"]])).args.ids[0];
     const g = await call(app, [
       [
@@ -260,7 +312,14 @@ describe("mailboxes, emails and counts", () => {
         {
           accountId,
           ids: [id],
-          properties: ["header:Subject:asText", "header:Message-ID:asMessageIds", "header:From:asAddresses", "header:X-Nope", "header:Date:asDate", "headers"],
+          properties: [
+            "header:Subject:asText",
+            "header:Message-ID:asMessageIds",
+            "header:From:asAddresses",
+            "header:X-Nope",
+            "header:Date:asDate",
+            "headers",
+          ],
         },
         "g",
       ],
@@ -271,8 +330,13 @@ describe("mailboxes, emails and counts", () => {
     expect(e["header:From:asAddresses"]).toEqual([{ name: "Bob", email: "bob@example.com" }]);
     expect(e["header:X-Nope"]).toBeNull();
     expect(e["header:Date:asDate"]).toBe("2026-10-12T03:00:00Z");
-    expect(e.headers.find((h: any) => h.name === "Subject")).toEqual({ name: "Subject", value: " Hdr" });
-    const bad = await call(app, [["Email/get", { accountId, ids: [id], properties: ["nonsense"] }, "g"]]);
+    expect(e.headers.find((h: any) => h.name === "Subject")).toEqual({
+      name: "Subject",
+      value: " Hdr",
+    });
+    const bad = await call(app, [
+      ["Email/get", { accountId, ids: [id], properties: ["nonsense"] }, "g"],
+    ]);
     expect(resp(bad).args.type).toBe("invalidArguments");
   });
 });
@@ -280,20 +344,59 @@ describe("mailboxes, emails and counts", () => {
 describe("Email/query filters and sorts", () => {
   it("filters on keywords, size, dates, addresses, text and operators; sorts; pages", async () => {
     const { app, accountId, box } = await setupAccount("jm-6", ["jm-6@example.com"]);
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Alpha invoice", from: "Zed <zed@example.com>", messageId: "<q1@example.com>", text: "pay the invoice soon", date: "Mon, 12 Oct 2026 10:00:00 +0000" });
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Beta meeting", from: "Amy <amy@example.com>", messageId: "<q2@example.com>", text: "see you at noon", date: "Mon, 12 Oct 2026 11:00:00 +0000" });
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Gamma attachment", from: "Bob <bob@example.com>", messageId: "<q3@example.com>", text: "file attached", date: "Mon, 12 Oct 2026 12:00:00 +0000", attachment: { filename: "a.txt", mimeType: "text/plain", base64: "aGVsbG8=" } });
-    const all = resp(await call(app, [["Email/query", { accountId, sort: [{ property: "subject" }] }, "q"]])).args.ids as string[];
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Alpha invoice",
+      from: "Zed <zed@example.com>",
+      messageId: "<q1@example.com>",
+      text: "pay the invoice soon",
+      date: "Mon, 12 Oct 2026 10:00:00 +0000",
+    });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Beta meeting",
+      from: "Amy <amy@example.com>",
+      messageId: "<q2@example.com>",
+      text: "see you at noon",
+      date: "Mon, 12 Oct 2026 11:00:00 +0000",
+    });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Gamma attachment",
+      from: "Bob <bob@example.com>",
+      messageId: "<q3@example.com>",
+      text: "file attached",
+      date: "Mon, 12 Oct 2026 12:00:00 +0000",
+      attachment: { filename: "a.txt", mimeType: "text/plain", base64: "aGVsbG8=" },
+    });
+    const all = resp(
+      await call(app, [["Email/query", { accountId, sort: [{ property: "subject" }] }, "q"]]),
+    ).args.ids as string[];
     const subj = async (filter: unknown, extra: Record<string, unknown> = {}) => {
       const q = await call(app, [
-        ["Email/query", { accountId, filter, sort: [{ property: "subject", isAscending: true }], ...extra }, "q"],
-        ["Email/get", { accountId, "#ids": { resultOf: "q", name: "Email/query", path: "/ids" }, properties: ["subject"] }, "g"],
+        [
+          "Email/query",
+          { accountId, filter, sort: [{ property: "subject", isAscending: true }], ...extra },
+          "q",
+        ],
+        [
+          "Email/get",
+          {
+            accountId,
+            "#ids": { resultOf: "q", name: "Email/query", path: "/ids" },
+            properties: ["subject"],
+          },
+          "g",
+        ],
       ]);
       if (resp(q).name === "error") return resp(q).args.type;
       const byId = new Map(resp(q, 1).args.list.map((e: any) => [e.id, e.subject]));
       return resp(q).args.ids.map((i: string) => byId.get(i));
     };
-    await call(app, [["Email/set", { accountId, update: { [all[0]!]: { "keywords/$flagged": true, "keywords/$seen": true } } }, "s"]]);
+    await call(app, [
+      [
+        "Email/set",
+        { accountId, update: { [all[0]!]: { "keywords/$flagged": true, "keywords/$seen": true } } },
+        "s",
+      ],
+    ]);
 
     expect(await subj({ hasKeyword: "$flagged" })).toEqual(["Alpha invoice"]);
     expect(await subj({ notKeyword: "$seen" })).toEqual(["Beta meeting", "Gamma attachment"]);
@@ -305,14 +408,24 @@ describe("Email/query filters and sorts", () => {
     expect(await subj({ text: "inv*" })).toEqual(["Alpha invoice"]);
     expect(await subj({ after: "2026-01-01T00:00:00Z" })).toHaveLength(3);
     expect(await subj({ before: "2026-01-01T00:00:00Z" })).toEqual([]);
-    expect(await subj({ operator: "OR", conditions: [{ from: "zed" }, { subject: "gamma" }] })).toEqual(["Alpha invoice", "Gamma attachment"]);
-    expect(await subj({ operator: "NOT", conditions: [{ hasKeyword: "$seen" }] })).toEqual(["Beta meeting", "Gamma attachment"]);
-    expect(await subj({ operator: "AND", conditions: [{ notKeyword: "$seen" }, { text: "attached" }] })).toEqual(["Gamma attachment"]);
+    expect(
+      await subj({ operator: "OR", conditions: [{ from: "zed" }, { subject: "gamma" }] }),
+    ).toEqual(["Alpha invoice", "Gamma attachment"]);
+    expect(await subj({ operator: "NOT", conditions: [{ hasKeyword: "$seen" }] })).toEqual([
+      "Beta meeting",
+      "Gamma attachment",
+    ]);
+    expect(
+      await subj({ operator: "AND", conditions: [{ notKeyword: "$seen" }, { text: "attached" }] }),
+    ).toEqual(["Gamma attachment"]);
     expect(await subj({ inMailboxOtherThan: [box("inbox")] })).toEqual([]);
     expect(await subj({ inMailbox: box("trash") })).toEqual([]);
     expect(await subj({ minSize: 1, maxSize: 100000000 })).toHaveLength(3);
     expect(await subj({ someInThreadHaveKeyword: "$flagged" })).toEqual(["Alpha invoice"]);
-    expect(await subj({ noneInThreadHaveKeyword: "$flagged" })).toEqual(["Beta meeting", "Gamma attachment"]);
+    expect(await subj({ noneInThreadHaveKeyword: "$flagged" })).toEqual([
+      "Beta meeting",
+      "Gamma attachment",
+    ]);
     expect(await subj({ allInThreadHaveKeyword: "$flagged" })).toEqual(["Alpha invoice"]);
     expect(await subj({ header: ["Subject", "beta"] })).toEqual(["Beta meeting"]);
     expect(await subj({ bogus: 1 })).toBe("unsupportedFilter");
@@ -322,23 +435,58 @@ describe("Email/query filters and sorts", () => {
     const sorted = async (sort: unknown[]) => {
       const q = await call(app, [
         ["Email/query", { accountId, sort }, "q"],
-        ["Email/get", { accountId, "#ids": { resultOf: "q", name: "Email/query", path: "/ids" }, properties: ["subject"] }, "g"],
+        [
+          "Email/get",
+          {
+            accountId,
+            "#ids": { resultOf: "q", name: "Email/query", path: "/ids" },
+            properties: ["subject"],
+          },
+          "g",
+        ],
       ]);
       const byId = new Map(resp(q, 1).args.list.map((e: any) => [e.id, e.subject]));
       return resp(q).args.ids.map((i: string) => byId.get(i));
     };
-    expect(await sorted([{ property: "from", isAscending: true }])).toEqual(["Beta meeting", "Gamma attachment", "Alpha invoice"]);
-    expect(await sorted([{ property: "receivedAt", isAscending: false }, { property: "subject" }]).then((x) => x.length)).toBe(3);
-    expect(await sorted([{ property: "subject", isAscending: false }])).toEqual(["Gamma attachment", "Beta meeting", "Alpha invoice"]);
-    expect(await sorted([{ property: "hasKeyword", keyword: "$flagged", isAscending: false }, { property: "subject" }])).toEqual(["Alpha invoice", "Beta meeting", "Gamma attachment"]);
+    expect(await sorted([{ property: "from", isAscending: true }])).toEqual([
+      "Beta meeting",
+      "Gamma attachment",
+      "Alpha invoice",
+    ]);
+    expect(
+      await sorted([{ property: "receivedAt", isAscending: false }, { property: "subject" }]).then(
+        (x) => x.length,
+      ),
+    ).toBe(3);
+    expect(await sorted([{ property: "subject", isAscending: false }])).toEqual([
+      "Gamma attachment",
+      "Beta meeting",
+      "Alpha invoice",
+    ]);
+    expect(
+      await sorted([
+        { property: "hasKeyword", keyword: "$flagged", isAscending: false },
+        { property: "subject" },
+      ]),
+    ).toEqual(["Alpha invoice", "Beta meeting", "Gamma attachment"]);
     expect(await sorted([{ property: "size", isAscending: true }]).then((x) => x.length)).toBe(3);
-    const unsupported = await call(app, [["Email/query", { accountId, sort: [{ property: "nope" }] }, "q"]]);
+    const unsupported = await call(app, [
+      ["Email/query", { accountId, sort: [{ property: "nope" }] }, "q"],
+    ]);
     expect(resp(unsupported).args.type).toBe("unsupportedSort");
 
     // paging
     const page = await call(app, [
-      ["Email/query", { accountId, sort: [{ property: "subject" }], position: 1, limit: 1, calculateTotal: true }, "q"],
-      ["Email/query", { accountId, sort: [{ property: "subject" }], anchor: all[1], anchorOffset: 1, limit: 5 }, "q2"],
+      [
+        "Email/query",
+        { accountId, sort: [{ property: "subject" }], position: 1, limit: 1, calculateTotal: true },
+        "q",
+      ],
+      [
+        "Email/query",
+        { accountId, sort: [{ property: "subject" }], anchor: all[1], anchorOffset: 1, limit: 5 },
+        "q2",
+      ],
       ["Email/query", { accountId, sort: [{ property: "subject" }], anchor: "nope" }, "q3"],
       ["Email/query", { accountId, sort: [{ property: "subject" }], position: -1 }, "q4"],
       ["Email/query", { accountId, limit: 0, calculateTotal: true }, "q5"],
@@ -352,11 +500,18 @@ describe("Email/query filters and sorts", () => {
 
   it("SearchSnippet/get highlights terms", async () => {
     const { app, accountId } = await setupAccount("jm-7", ["jm-7@example.com"]);
-    await deliver(accountId, `${accountId}@example.com`, { subject: "Pineapple pizza <b>", text: "I really love pineapple & ham on pizza." });
+    await deliver(accountId, `${accountId}@example.com`, {
+      subject: "Pineapple pizza <b>",
+      text: "I really love pineapple & ham on pizza.",
+    });
     const filter = { text: "pineapple" };
     const r = await call(app, [
       ["Email/query", { accountId, filter }, "q"],
-      ["SearchSnippet/get", { accountId, filter, "#emailIds": { resultOf: "q", name: "Email/query", path: "/ids" } }, "s"],
+      [
+        "SearchSnippet/get",
+        { accountId, filter, "#emailIds": { resultOf: "q", name: "Email/query", path: "/ids" } },
+        "s",
+      ],
     ]);
     const snip = resp(r, 1).args.list[0];
     expect(snip.subject).toBe("<mark>Pineapple</mark> pizza &lt;b&gt;");
@@ -370,7 +525,20 @@ describe("Mailbox/set", () => {
     const { app, accountId, box } = await setupAccount("jm-8", ["jm-8@example.com"]);
     await deliver(accountId, `${accountId}@example.com`, { subject: "In inbox" });
     const r = await call(app, [
-      ["Mailbox/set", { accountId, create: { a: { name: "Work" }, b: { name: "work" }, c: { name: "" }, d: { name: "X", role: "inbox" }, e: { name: "Y", foo: 1 } } }, "s"],
+      [
+        "Mailbox/set",
+        {
+          accountId,
+          create: {
+            a: { name: "Work" },
+            b: { name: "work" },
+            c: { name: "" },
+            d: { name: "X", role: "inbox" },
+            e: { name: "Y", foo: 1 },
+          },
+        },
+        "s",
+      ],
     ]);
     const a = resp(r).args;
     expect(a.created.a.id).toBeTruthy();
@@ -381,31 +549,57 @@ describe("Mailbox/set", () => {
     const work = a.created.a.id;
 
     const u = await call(app, [
-      ["Mailbox/set", { accountId, update: { [work]: { name: "Jobs", sortOrder: 50 }, [box("sent")]: { role: null }, [box("inbox")]: { parentId: work }, nope: { name: "q" } } }, "s"],
+      [
+        "Mailbox/set",
+        {
+          accountId,
+          update: {
+            [work]: { name: "Jobs", sortOrder: 50 },
+            [box("sent")]: { role: null },
+            [box("inbox")]: { parentId: work },
+            nope: { name: "q" },
+          },
+        },
+        "s",
+      ],
     ]);
     expect(resp(u).args.updated).toHaveProperty(work);
     expect(resp(u).args.notUpdated[box("sent")].type).toBe("forbidden");
     expect(resp(u).args.notUpdated.nope.type).toBe("notFound");
     // inbox moved under Jobs, then Jobs cannot move under inbox
-    const loop = await call(app, [["Mailbox/set", { accountId, update: { [work]: { parentId: box("inbox") } } }, "s"]]);
+    const loop = await call(app, [
+      ["Mailbox/set", { accountId, update: { [work]: { parentId: box("inbox") } } }, "s"],
+    ]);
     expect(resp(loop).args.notUpdated[work].type).toBe("invalidProperties");
 
-    await call(app, [["Mailbox/set", { accountId, update: { [box("inbox")]: { parentId: null } } }, "s"]]);
+    await call(app, [
+      ["Mailbox/set", { accountId, update: { [box("inbox")]: { parentId: null } } }, "s"],
+    ]);
     const q = await call(app, [["Mailbox/query", { accountId, filter: { name: "job" } }, "q"]]);
     expect(resp(q).args.ids).toEqual([work]);
 
     // destroy rules
-    const sub = (await call(app, [["Mailbox/set", { accountId, create: { s: { name: "Sub", parentId: work } } }, "s"]])).methodResponses[0]![1].created.s.id;
-    const d1 = await call(app, [["Mailbox/set", { accountId, destroy: [work, box("trash"), "ghost"] }, "s"]]);
+    const sub = (
+      await call(app, [
+        ["Mailbox/set", { accountId, create: { s: { name: "Sub", parentId: work } } }, "s"],
+      ])
+    ).methodResponses[0]![1].created.s.id;
+    const d1 = await call(app, [
+      ["Mailbox/set", { accountId, destroy: [work, box("trash"), "ghost"] }, "s"],
+    ]);
     expect(resp(d1).args.notDestroyed[work].type).toBe("mailboxHasChild");
     expect(resp(d1).args.notDestroyed[box("trash")].type).toBe("forbidden");
     expect(resp(d1).args.notDestroyed.ghost.type).toBe("notFound");
 
     const em = resp(await call(app, [["Email/query", { accountId }, "q"]])).args.ids[0];
-    await call(app, [["Email/set", { accountId, update: { [em]: { mailboxIds: { [sub]: true } } } }, "u"]]);
+    await call(app, [
+      ["Email/set", { accountId, update: { [em]: { mailboxIds: { [sub]: true } } } }, "u"],
+    ]);
     const d2 = await call(app, [["Mailbox/set", { accountId, destroy: [sub] }, "s"]]);
     expect(resp(d2).args.notDestroyed[sub].type).toBe("mailboxHasEmail");
-    const d3 = await call(app, [["Mailbox/set", { accountId, destroy: [sub], onDestroyRemoveEmails: true }, "s"]]);
+    const d3 = await call(app, [
+      ["Mailbox/set", { accountId, destroy: [sub], onDestroyRemoveEmails: true }, "s"],
+    ]);
     expect(resp(d3).args.destroyed).toEqual([sub]);
     const gone = await call(app, [["Email/get", { accountId, ids: [em] }, "g"]]);
     expect(resp(gone).args.notFound).toEqual([em]);

@@ -1,3 +1,4 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { expect } from "vitest";
 import { runDurableObjectAlarm } from "cloudflare:test";
