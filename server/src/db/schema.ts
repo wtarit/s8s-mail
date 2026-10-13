@@ -1,13 +1,18 @@
 import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { user } from "./auth-schema";
+
+// Better Auth's tables (user, session, account, passkey, apikey, jwks, oauth_*, rate_limit, ...).
+// Generated: `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts`
+// (run from server/ after changing the plugin set in src/auth/auth.ts), then `pnpm db:generate:d1`.
+export * from "./auth-schema";
 
 /**
  * D1 global directory: which domains we serve, which JMAP accounts exist and
  * which addresses deliver into them. Mail data never lives here; it is in the
  * per-account Durable Object (see src/store/).
  *
- * Better Auth's tables (user, session, passkey, ...) are added alongside these
- * by the auth module. `mail_account.owner_user_id` references Better Auth's
- * `user.id` (no FK: that table is generated separately).
+ * `mail_account.owner_user_id` references Better Auth's `user.id` (no FK: deleting a user is
+ * done explicitly by the admin API, which must also wipe the account's Durable Object).
  *
  * Addresses and domain names are stored lowercased.
  */
@@ -49,4 +54,24 @@ export const address = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("address_account_idx").on(t.accountId)],
+);
+
+/**
+ * One-time invite links. The raw token is only ever shown to the admin (and mailed to the
+ * recovery address); we store sha256(token). Accepting an invite sets `used_at` and starts a session.
+ */
+export const invite = sqliteTable(
+  "invite",
+  {
+    id: text("id").primaryKey(),
+    /** hex sha256 of the raw token */
+    tokenHash: text("token_hash").notNull().unique(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
+    usedAt: integer("used_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("invite_user_idx").on(t.userId)],
 );
