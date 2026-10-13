@@ -2,6 +2,7 @@ import {
   IconDeviceDesktop,
   IconFingerprint,
   IconKey,
+  IconLock,
   IconMail,
   IconMoon,
   IconApps,
@@ -10,10 +11,11 @@ import {
   IconUsers,
   IconWorld,
 } from "@tabler/icons-react";
-import { NavLink, Outlet, useMatch } from "react-router";
+import { NavLink, Outlet, useMatch, useNavigate } from "react-router";
+import { toast } from "sonner";
 import type { ComponentType } from "react";
 import { BrandLogo } from "@/components/brand-logo";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { UserAvatar } from "@/components/user-avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -38,6 +40,8 @@ import {
   SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useRuntimeConfig } from "@/config/runtime-config";
+import { getAuthClient } from "@/lib/auth-client";
+import { useMe } from "@/lib/me";
 import { useT, type MessageKey } from "@/i18n";
 import { useTheme } from "@/theme/theme";
 
@@ -51,6 +55,7 @@ const accountNav: NavItem[] = [
   { to: "/account/profile", labelKey: "nav.profile", icon: IconUser },
   { to: "/account/passkeys", labelKey: "nav.passkeys", icon: IconFingerprint },
   { to: "/account/app-passwords", labelKey: "nav.appPasswords", icon: IconKey },
+  { to: "/account/password", labelKey: "nav.password", icon: IconLock },
   { to: "/account/sessions", labelKey: "nav.sessions", icon: IconDeviceDesktop },
   { to: "/account/recovery", labelKey: "nav.recovery", icon: IconMail },
 ];
@@ -94,25 +99,38 @@ function NavGroup({ labelKey, items }: { labelKey: MessageKey; items: NavItem[] 
 
 function UserMenu() {
   const t = useT();
+  const navigate = useNavigate();
   const { resolved, toggle } = useTheme();
-  const email = t("userMenu.placeholderEmail"); // TODO(auth): signed-in user's email
+  const { me } = useMe();
+
+  async function signOut() {
+    try {
+      await getAuthClient().signOut();
+    } catch {
+      // the session may already be gone; leave anyway
+    }
+    toast.success(t("userMenu.signedOut"));
+    navigate("/login", { replace: true });
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" aria-label={t("userMenu.label")}>
-          <Avatar>
-            <AvatarFallback>{email.charAt(0).toUpperCase()}</AvatarFallback>
-          </Avatar>
+          <UserAvatar name={me.user.name} email={me.user.email} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>{email}</DropdownMenuLabel>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuLabel className="flex flex-col">
+          <span className="text-foreground truncate text-sm font-semibold">{me.user.name}</span>
+          <span className="truncate text-[13px] font-normal">{me.user.email}</span>
+        </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={toggle}>
           <IconMoon size={18} stroke={1.75} />
           {t("userMenu.theme")}: {t(resolved === "dark" ? "theme.dark" : "theme.light")}
         </DropdownMenuItem>
-        <DropdownMenuItem disabled>
+        <DropdownMenuItem onSelect={() => void signOut()}>
           <IconLogout size={18} stroke={1.75} />
           {t("userMenu.signOut")}
         </DropdownMenuItem>
@@ -123,10 +141,11 @@ function UserMenu() {
 
 /**
  * Sidebar (240px, a sheet below 768px) plus a content column (design-system.md section 4).
- * TODO(auth): gate the Admin group on the signed-in user's role.
+ * The Admin group is shown only to role admin (the server enforces it too).
  */
 export function AppShell() {
   const { appName } = useRuntimeConfig();
+  const { me } = useMe();
   return (
     <SidebarProvider style={{ "--sidebar-width": "15rem" } as React.CSSProperties}>
       <Sidebar>
@@ -138,7 +157,7 @@ export function AppShell() {
         </SidebarHeader>
         <SidebarContent>
           <NavGroup labelKey="nav.account" items={accountNav} />
-          <NavGroup labelKey="nav.admin" items={adminNav} />
+          {me.user.role === "admin" ? <NavGroup labelKey="nav.admin" items={adminNav} /> : null}
         </SidebarContent>
       </Sidebar>
       <SidebarInset>
