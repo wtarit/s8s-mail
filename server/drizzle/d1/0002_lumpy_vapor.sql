@@ -1,0 +1,1 @@
+ALTER TABLE `domain` ADD `catch_all_address` text;

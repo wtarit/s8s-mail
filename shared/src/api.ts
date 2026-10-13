@@ -126,11 +126,33 @@ export const addAliasRequest = z.object({ address: emailAddress });
 export const adminDomain = z.object({
   name: z.string(),
   addressCount: z.number().int().nonnegative(),
+  /** Address that receives mail to unknown local parts on this domain; null = reject them. */
+  catchAllAddress: z.string().nullable(),
   createdAt: isoDate,
 });
+export type AdminDomain = z.infer<typeof adminDomain>;
 /** GET /api/admin/domains ; POST {name} ; DELETE /api/admin/domains/:name (only when unused) */
 export const domainListResponse = z.object({ domains: z.array(adminDomain) });
+export type DomainListResponse = z.infer<typeof domainListResponse>;
 export const addDomainRequest = z.object({ name: domainName });
+
+/**
+ * PATCH /api/admin/domains/:name -> domainListResponse.
+ * `catchAllAddress` must be an existing address (primary or alias, any served domain), or null
+ * to reject unknown recipients again. 404 unknown domain; 400 `invalid_catch_all` otherwise.
+ */
+export const updateDomainRequest = z.object({ catchAllAddress: emailAddress.nullable() });
+export type UpdateDomainRequest = z.input<typeof updateDomainRequest>;
+
+/** GET /api/admin/addresses: every address in the directory (for the catch-all picker). */
+export const adminAddress = z.object({
+  address: z.string(),
+  kind: z.enum(["primary", "alias"]),
+  /** Display name of the account that owns the address. */
+  accountName: z.string(),
+});
+export const adminAddressListResponse = z.object({ addresses: z.array(adminAddress) });
+export type AdminAddressListResponse = z.infer<typeof adminAddressListResponse>;
 
 // ---------------------------------------------------------------- admin: OAuth clients ("Sign-in apps")
 

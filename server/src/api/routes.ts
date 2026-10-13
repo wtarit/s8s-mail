@@ -1,6 +1,7 @@
 import {
   addAliasRequest,
   addDomainRequest,
+  updateDomainRequest,
   createOAuthClientRequest,
   createUserRequest,
   setPasswordRequest,
@@ -360,17 +361,26 @@ admin.delete("/users/:id/aliases/:address", async (c) => {
   const address = decodeURIComponent(c.req.param("address")).toLowerCase();
   await requireUser(c.env, id);
   const accountId = await personalAccountId(c.env, id);
-  const deleted = await getDb(c.env)
-    .delete(schema.address)
-    .where(
-      and(
-        eq(schema.address.address, address),
-        eq(schema.address.accountId, accountId),
-        eq(schema.address.kind, "alias"),
-      ),
-    )
-    .returning({ address: schema.address.address });
-  if (deleted.length === 0) throw new ApiHttpError(404, "not_found", "Alias not found");
+  const db = getDb(c.env);
+  const isAlias = and(
+    eq(schema.address.address, address),
+    eq(schema.address.accountId, accountId),
+    eq(schema.address.kind, "alias"),
+  );
+  const found = await db
+    .select({ address: schema.address.address })
+    .from(schema.address)
+    .where(isAlias)
+    .get();
+  if (!found) throw new ApiHttpError(404, "not_found", "Alias not found");
+  // One batch (a D1 transaction): a domain catch-all pointing at the alias is cleared with it.
+  await db.batch([
+    db
+      .update(schema.domain)
+      .set({ catchAllAddress: null })
+      .where(eq(schema.domain.catchAllAddress, address)),
+    db.delete(schema.address).where(isAlias),
+  ]);
   return c.json(await listAliases(c.env, id));
 });
 
@@ -390,6 +400,7 @@ async function listDomains(env: Env) {
     domains: domains.map((d) => ({
       name: d.name,
       addressCount: byDomain.get(d.name) ?? 0,
+      catchAllAddress: d.catchAllAddress,
       createdAt: d.createdAt.toISOString(),
     })),
   };
@@ -407,6 +418,47 @@ admin.post("/domains", validate("json", addDomainRequest), async (c) => {
     .returning({ name: schema.domain.name });
   if (inserted.length === 0) throw new ApiHttpError(409, "domain_exists", "Domain already exists");
   return c.json(await listDomains(c.env), 201);
+});
+
+admin.patch("/domains/:name", validate("json", updateDomainRequest), async (c) => {
+  const name = c.req.param("name").toLowerCase();
+  const { catchAllAddress } = c.req.valid("json");
+  const db = getDb(c.env);
+  const exists = await db
+    .select({ name: schema.domain.name })
+    .from(schema.domain)
+    .where(eq(schema.domain.name, name))
+    .get();
+  if (!exists) throw new ApiHttpError(404, "not_found", "Domain not found");
+  if (catchAllAddress !== null) {
+    const target = await db
+      .select({ address: schema.address.address })
+      .from(schema.address)
+      .where(eq(schema.address.address, catchAllAddress))
+      .get();
+    if (!target) {
+      throw new ApiHttpError(
+        400,
+        "invalid_catch_all",
+        "The catch-all must be an existing address of this deployment",
+      );
+    }
+  }
+  await db.update(schema.domain).set({ catchAllAddress }).where(eq(schema.domain.name, name));
+  return c.json(await listDomains(c.env));
+});
+
+admin.get("/addresses", async (c) => {
+  const rows = await getDb(c.env)
+    .select({
+      address: schema.address.address,
+      kind: schema.address.kind,
+      accountName: schema.mailAccount.name,
+    })
+    .from(schema.address)
+    .innerJoin(schema.mailAccount, eq(schema.address.accountId, schema.mailAccount.id))
+    .orderBy(asc(schema.address.address));
+  return c.json({ addresses: rows });
 });
 
 admin.delete("/domains/:name", async (c) => {

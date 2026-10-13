@@ -1,8 +1,9 @@
 import { addDomainRequest, domainListResponse, type adminDomain } from "@s8s/shared";
-import { IconPlus, IconTrash, IconWorld } from "@tabler/icons-react";
+import { IconAt, IconPlus, IconTrash, IconWorld } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { z } from "zod";
+import { CatchAllDialog } from "@/pages/admin/catch-all-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { FormError } from "@/components/form-error";
@@ -43,6 +44,7 @@ export function DomainsPage() {
   );
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<Domain | null>(null);
+  const [editing, setEditing] = useState<Domain | null>(null);
   const domains = data?.domains;
 
   const addButton = (
@@ -73,6 +75,7 @@ export function DomainsPage() {
               <TableRow>
                 <TableHead>{t("domains.colName")}</TableHead>
                 <TableHead>{t("domains.colAddresses")}</TableHead>
+                <TableHead>{t("domains.colCatchAll")}</TableHead>
                 <TableHead>{t("domains.colAdded")}</TableHead>
                 <TableHead>
                   <span className="sr-only">{t("users.colActions")}</span>
@@ -84,10 +87,26 @@ export function DomainsPage() {
                 <TableRow key={domain.name}>
                   <TableCell className="font-mono text-[13px]">{domain.name}</TableCell>
                   <TableCell>{domain.addressCount}</TableCell>
+                  <TableCell
+                    className={
+                      domain.catchAllAddress ? "font-mono text-[13px]" : "text-muted-foreground"
+                    }
+                  >
+                    {domain.catchAllAddress ?? t("domains.catchAllOff")}
+                  </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDate(domain.createdAt)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title={t("domains.catchAllEditAria", { name: domain.name })}
+                      aria-label={t("domains.catchAllEditAria", { name: domain.name })}
+                      onClick={() => setEditing(domain)}
+                    >
+                      <IconAt size={18} stroke={1.75} />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -107,6 +126,12 @@ export function DomainsPage() {
       ) : null}
 
       <AddDomainDialog open={adding} onOpenChange={setAdding} onAdded={reload} />
+
+      <CatchAllDialog
+        domain={editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        onSaved={reload}
+      />
 
       <ConfirmDialog
         open={removing !== null}

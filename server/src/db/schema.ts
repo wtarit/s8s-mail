@@ -19,6 +19,13 @@ export * from "./auth-schema";
 
 export const domain = sqliteTable("domain", {
   name: text("name").primaryKey(),
+  /**
+   * Catch-all: an existing `address.address` (primary or alias, on any served domain) that
+   * receives mail to unknown local parts on this domain. null = reject unknown recipients.
+   * Deliberately no FK (it would be circular with `address.domain`): the admin API clears it
+   * in the same batch that deletes the address (alias removed, user deleted).
+   */
+  catchAllAddress: text("catch_all_address"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
 });
 

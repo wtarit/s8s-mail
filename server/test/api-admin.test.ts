@@ -218,6 +218,8 @@ describe("admin: users and invites", () => {
       ["POST", "/api/admin/users"],
       ["GET", "/api/admin/domains"],
       ["POST", "/api/admin/domains"],
+      ["PATCH", "/api/admin/domains/example.com"],
+      ["GET", "/api/admin/addresses"],
       ["GET", "/api/admin/oauth-clients"],
       ["POST", "/api/admin/oauth-clients/ensure-defaults"],
       ["DELETE", `/api/admin/users/${created.body.user.id}`],
@@ -333,6 +335,17 @@ describe("admin: users and invites", () => {
     expect(left).toEqual({ u: 0, a: 0, ad: 0 });
   });
 });
+
+function patchDomain(cookie: string, name: string, json: unknown) {
+  return request<Json>(`/api/admin/domains/${name}`, { method: "PATCH", cookie, json });
+}
+
+async function catchAllOf(name = "example.com") {
+  const row = await env.DB.prepare("SELECT catch_all_address AS c FROM domain WHERE name = ?")
+    .bind(name)
+    .first<{ c: string | null }>();
+  return row?.c;
+}
 
 describe("admin: aliases and domains", () => {
   let admin: Session;
@@ -460,6 +473,108 @@ describe("admin: aliases and domains", () => {
         })
       ).status,
     ).toBe(404);
+  });
+
+  describe("domain catch-all", () => {
+    it("is null by default, can be set to any existing address and cleared", async () => {
+      const list = await request<Json>("/api/admin/domains", { cookie: admin.cookie });
+      expect(list.body.domains[0].catchAllAddress).toBeNull();
+
+      const set = await patchDomain(admin.cookie, "example.com", {
+        catchAllAddress: "Admin@Example.com",
+      });
+      expect(set.status).toBe(200);
+      expect(set.body.domains[0].catchAllAddress).toBe("admin@example.com");
+      expect(await catchAllOf()).toBe("admin@example.com");
+
+      // an alias on another served domain is fine too
+      await request("/api/admin/domains", {
+        method: "POST",
+        cookie: admin.cookie,
+        json: { name: "example.net" },
+      });
+      await addAlias("hello@example.net");
+      const other = await patchDomain(admin.cookie, "example.com", {
+        catchAllAddress: "hello@example.net",
+      });
+      expect(other.body.domains.find((d: Json) => d.name === "example.com").catchAllAddress).toBe(
+        "hello@example.net",
+      );
+
+      const cleared = await patchDomain(admin.cookie, "example.com", { catchAllAddress: null });
+      expect(cleared.status).toBe(200);
+      expect(
+        cleared.body.domains.find((d: Json) => d.name === "example.com").catchAllAddress,
+      ).toBeNull();
+      expect(await catchAllOf()).toBeNull();
+    });
+
+    it("validates: unknown domain 404, unknown address 400, bad body 400", async () => {
+      expect(
+        (await patchDomain(admin.cookie, "nope.example", { catchAllAddress: null })).status,
+      ).toBe(404);
+      const unknown = await patchDomain(admin.cookie, "example.com", {
+        catchAllAddress: "ghost@example.com",
+      });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.error.code).toBe("invalid_catch_all");
+      expect(
+        (await patchDomain(admin.cookie, "example.com", { catchAllAddress: "not-an-email" }))
+          .status,
+      ).toBe(400);
+      expect((await patchDomain(admin.cookie, "example.com", {})).status).toBe(400);
+      expect(await catchAllOf()).toBeNull();
+    });
+
+    it("lists every address with its kind and account name", async () => {
+      await addAlias("sales@example.com");
+      const res = await request<Json>("/api/admin/addresses", { cookie: admin.cookie });
+      expect(res.status).toBe(200);
+      expect(res.body.addresses).toEqual([
+        { address: "admin@example.com", kind: "primary", accountName: expect.any(String) },
+        { address: "ana@example.com", kind: "primary", accountName: "Ana" },
+        { address: "sales@example.com", kind: "alias", accountName: "Ana" },
+      ]);
+    });
+
+    it("is cleared when the alias it points at is deleted", async () => {
+      await addAlias("sales@example.com");
+      await patchDomain(admin.cookie, "example.com", { catchAllAddress: "sales@example.com" });
+      // an unrelated catch-all on another domain is left alone
+      await request("/api/admin/domains", {
+        method: "POST",
+        cookie: admin.cookie,
+        json: { name: "example.net" },
+      });
+      await patchDomain(admin.cookie, "example.net", { catchAllAddress: "admin@example.com" });
+
+      const del = await request(
+        `/api/admin/users/${userId}/aliases/${encodeURIComponent("sales@example.com")}`,
+        { method: "DELETE", cookie: admin.cookie },
+      );
+      expect(del.status).toBe(200);
+      expect(await catchAllOf("example.com")).toBeNull();
+      expect(await catchAllOf("example.net")).toBe("admin@example.com");
+    });
+
+    it("is cleared (on every domain) when the owning user is deleted", async () => {
+      await addAlias("sales@example.com");
+      await request("/api/admin/domains", {
+        method: "POST",
+        cookie: admin.cookie,
+        json: { name: "example.net" },
+      });
+      await patchDomain(admin.cookie, "example.com", { catchAllAddress: "ana@example.com" });
+      await patchDomain(admin.cookie, "example.net", { catchAllAddress: "sales@example.com" });
+
+      const del = await request(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+        cookie: admin.cookie,
+      });
+      expect(del.status).toBe(200);
+      expect(await catchAllOf("example.com")).toBeNull();
+      expect(await catchAllOf("example.net")).toBeNull();
+    });
   });
 
   it("oauth clients: ensure-defaults is idempotent, create/list/delete", async () => {

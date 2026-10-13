@@ -65,6 +65,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
   - Each account has one primary address plus **aliases** (other full addresses, any served domain). It receives on all of them, and each is a JMAP Identity it can send as.
   - **Plus-addressing** (`user+tag@`) always routes to `user@`.
   - The address → account mapping lives in D1.
+  - **Catch-all** (optional, per domain, `domain.catch_all_address`): mail to an unknown local part on a served domain goes to the account owning that address (any existing address on any served domain). Exact match and `+tag` stripping win; unset means reject with 5.1.1; unserved domains are always rejected. The admin API clears the setting in the same D1 batch that deletes the address (alias removed, user deleted), so it never dangles.
 - **Webmail = patched Bulwark Lite**, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail). It is a separate repo, AGPL-3.0, usually checked out next to this one as `../s8s-mail-webmail/`.
   - The patch enables the OIDC redirect flow for the `static` Lite target.
   - It uses standard `.well-known` discovery and takes the client ID from `config.json`.
