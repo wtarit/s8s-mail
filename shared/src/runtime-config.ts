@@ -13,6 +13,8 @@ export const RuntimeConfig = z.object({
   appName: z.string().min(1).default("S8S Mail"),
   logoLightUrl: z.string().optional(),
   logoDarkUrl: z.string().optional(),
+  /** Webmail URL for the "Continue to mail" link after sign-in or invite acceptance. */
+  webmailUrl: z.string().optional(),
 });
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfig>;
