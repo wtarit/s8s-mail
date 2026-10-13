@@ -196,6 +196,14 @@ async function emailGet(ctx: MethodContext, raw: Record<string, unknown>) {
   }
   const props = new Set(wanted);
   const needsBody = [...BODY_PROPS].some((p) => props.has(p));
+  // On-demand parsing (CPU) only when the response actually needs decoded body content.
+  const needsParsedBody =
+    props.has("textBody") ||
+    props.has("htmlBody") ||
+    props.has("attachments") ||
+    props.has("bodyStructure") ||
+    (props.has("bodyValues") &&
+      (args.fetchTextBodyValues || args.fetchHTMLBodyValues || args.fetchAllBodyValues));
   const needsHeaders = props.has("headers") || headerProps.size > 0;
   const bodyProps = new Set(args.bodyProperties ?? DEFAULT_BODY_PROPERTIES);
   const maxBytes = args.maxBodyValueBytes ?? 0;
@@ -206,7 +214,7 @@ async function emailGet(ctx: MethodContext, raw: Record<string, unknown>) {
 
   // Rows the DO has not parsed yet: parse a few small ones now (not persisted).
   const onDemand = new Map<string, ParsedBody>();
-  if (needsBody) {
+  if (needsParsedBody) {
     for (const row of result.rows) {
       if (row.parseState === "parsed" || onDemand.size >= ON_DEMAND_MAX_PER_REQUEST) continue;
       if (row.size > ON_DEMAND_MAX_RAW_BYTES || ctx.r2Budget <= 0) continue;
