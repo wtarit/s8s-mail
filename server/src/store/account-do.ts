@@ -4,6 +4,32 @@ import { drizzle, type DrizzleSqliteDODatabase } from "drizzle-orm/durable-sqlit
 import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import migrations from "../../drizzle/do/migrations";
 import { blobKey, MAX_PART_OBJECTS, newId, partBlobId } from "./blob";
+import { JmapStore } from "./jmap-store";
+import type {
+  AllStates,
+  ChangesResult,
+  EmailCreateInput,
+  EmailCreateResult,
+  EmailDestroyResult,
+  EmailForSubmission,
+  EmailGetResult,
+  EmailQueryParams,
+  EmailQueryResult,
+  EmailUpdateInput,
+  EmailUpdateResult,
+  IdentitySettingRow,
+  IdentitySettingUpdate,
+  MailboxGetResult,
+  MailboxQueryParams,
+  MailboxQueryResult,
+  MailboxSetParams,
+  MailboxSetResult,
+  SnippetRow,
+  SubmissionCreateInput,
+  SubmissionQueryParams,
+  SubmissionRow,
+  ThreadGetResult,
+} from "./jmap-types";
 import { parseMessage } from "./parse";
 import * as schema from "./schema";
 import { threadCandidates } from "./threading";
@@ -17,7 +43,7 @@ import type {
   StateChangeMessage,
 } from "./types";
 
-const { meta, mailbox, email, emailMailbox, threadRef, changeLog } = schema;
+const { meta, mailbox, email, emailMailbox, emailKeyword, threadRef, changeLog } = schema;
 
 /** An email is marked `failed` once its parse has been attempted this many times. */
 export const MAX_PARSE_ATTEMPTS = 3;
@@ -51,10 +77,12 @@ function addressText(list: EmailAddress[] | null | undefined): string {
  */
 export class AccountDO extends DurableObject<Env> implements AccountStore {
   readonly db: DrizzleSqliteDODatabase<typeof schema>;
+  private readonly jmap: JmapStore;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     this.db = drizzle(ctx.storage, { schema, logger: false });
+    this.jmap = new JmapStore(ctx.storage);
     // Keep-alives are answered without waking a hibernated DO.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
     void ctx.blockConcurrencyWhile(() => this.initStore());
@@ -151,13 +179,20 @@ export class AccountDO extends DurableObject<Env> implements AccountStore {
    */
   async ingest(input: IngestInput): Promise<IngestResult> {
     this.init(input.accountId);
-    const result = this.ctx.storage.transactionSync(() => this.insertEmail(input));
+    const result = this.ctx.storage.transactionSync(() =>
+      this.insertEmail(input, { role: input.mailboxRole }),
+    );
     await this.scheduleParseIfPending();
     if (result.created) this.broadcastStateChange();
     return { emailId: result.emailId, threadId: result.threadId };
   }
 
-  private insertEmail(input: IngestInput): IngestResult & { created: boolean } {
+  private insertEmail(
+    input: Pick<IngestInput, "blobId" | "size" | "receivedAt" | "headers">,
+    target:
+      | { role: MailboxRole }
+      | { mailboxIds: string[]; keywords: string[]; bcc: EmailAddress[] },
+  ): IngestResult & { created: boolean } {
     const existing = this.db
       .select({ emailId: email.id, threadId: email.threadId })
       .from(email)
@@ -165,12 +200,18 @@ export class AccountDO extends DurableObject<Env> implements AccountStore {
       .get();
     if (existing) return { ...existing, created: false };
 
-    const box = this.db
-      .select({ id: mailbox.id })
-      .from(mailbox)
-      .where(eq(mailbox.role, input.mailboxRole))
-      .get();
-    if (!box) throw new Error(`No mailbox with role ${input.mailboxRole}`);
+    let boxIds: string[];
+    if ("role" in target) {
+      const box = this.db
+        .select({ id: mailbox.id })
+        .from(mailbox)
+        .where(eq(mailbox.role, target.role))
+        .get();
+      if (!box) throw new Error(`No mailbox with role ${target.role}`);
+      boxIds = [box.id];
+    } else {
+      boxIds = target.mailboxIds;
+    }
 
     const h = input.headers;
     const candidates = threadCandidates(h.messageId, h.inReplyTo, h.references);
@@ -215,15 +256,26 @@ export class AccountDO extends DurableObject<Env> implements AccountStore {
         sender: h.sender,
         to: h.to,
         cc: h.cc,
-        bcc: [],
+        bcc: "bcc" in target ? target.bcc : [],
         replyTo: h.replyTo,
       })
       .run();
-    this.db.insert(emailMailbox).values({ emailId, mailboxId: box.id }).run();
     this.db
-      .insert(changeLog)
-      .values({ type: "EmailDelivery", objectId: emailId, kind: "created" })
+      .insert(emailMailbox)
+      .values(boxIds.map((mailboxId) => ({ emailId, mailboxId })))
       .run();
+    if ("keywords" in target && target.keywords.length > 0) {
+      this.db
+        .insert(emailKeyword)
+        .values(target.keywords.map((keyword) => ({ emailId, keyword })))
+        .run();
+    }
+    if ("role" in target) {
+      this.db
+        .insert(changeLog)
+        .values({ type: "EmailDelivery", objectId: emailId, kind: "created" })
+        .run();
+    }
     return { emailId, threadId, created: true };
   }
 
@@ -332,6 +384,142 @@ export class AccountDO extends DurableObject<Env> implements AccountStore {
       .set({ parseState: "failed", parseError: error })
       .where(eq(email.id, emailId))
       .run();
+  }
+
+  // ---------------------------------------------------------------------------------
+  // JMAP (RFC 8620/8621) RPC surface. Thin wrappers over ./jmap-store.ts; writes run in
+  // one transaction, arm the parse alarm where needed and push a StateChange afterwards.
+  // ---------------------------------------------------------------------------------
+
+  /** RPC: every JMAP state string. */
+  getAllStates(): AllStates {
+    return this.jmap.states();
+  }
+
+  /** RPC: `Foo/changes` for Email, Mailbox, Thread, EmailSubmission or Identity. */
+  getChanges(type: string, sinceState: string, maxChanges: number): ChangesResult {
+    return this.jmap.changes(type, sinceState, maxChanges);
+  }
+
+  mailboxGet(ids: string[] | null): MailboxGetResult {
+    return this.jmap.mailboxGet(ids);
+  }
+
+  mailboxQuery(p: MailboxQueryParams): MailboxQueryResult {
+    return this.jmap.mailboxQuery(p);
+  }
+
+  mailboxSet(p: MailboxSetParams): MailboxSetResult {
+    this.init(p.accountId);
+    const result = this.ctx.storage.transactionSync(() => this.jmap.mailboxSet(p));
+    if (result.ok && result.oldState !== result.newState) this.broadcastStateChange();
+    return result;
+  }
+
+  threadGet(ids: string[]): ThreadGetResult {
+    return this.jmap.threadGet(ids);
+  }
+
+  emailGet(ids: string[], withBody: boolean): EmailGetResult {
+    return this.jmap.emailGet(ids, withBody);
+  }
+
+  emailQuery(p: EmailQueryParams): EmailQueryResult {
+    return this.jmap.emailQuery(p);
+  }
+
+  emailSnippets(emailIds: string[], ftsQuery: string | null): SnippetRow[] {
+    return this.jmap.snippets(emailIds, ftsQuery);
+  }
+
+  emailForSubmission(emailId: string): EmailForSubmission | null {
+    return this.jmap.emailForSubmission(emailId);
+  }
+
+  /**
+   * RPC: inserts an email whose raw message is already in R2 (Email/set create,
+   * Email/import). Threads it like a delivery, honors the given mailboxes and keywords,
+   * and arms the body-parse alarm.
+   */
+  async emailCreate(input: EmailCreateInput): Promise<EmailCreateResult> {
+    this.init(input.accountId);
+    const result = this.ctx.storage.transactionSync((): EmailCreateResult => {
+      if (input.mailboxIds.length === 0 || !this.jmap.mailboxIdsExist(input.mailboxIds)) {
+        return {
+          ok: false,
+          error: {
+            type: "invalidProperties",
+            properties: ["mailboxIds"],
+            description: "mailboxIds must name at least one existing mailbox",
+          },
+        };
+      }
+      const r = this.insertEmail(input, {
+        mailboxIds: [...new Set(input.mailboxIds)],
+        keywords: [...new Set(input.keywords)],
+        bcc: input.headers.bcc,
+      });
+      return { ok: true, emailId: r.emailId, threadId: r.threadId };
+    });
+    if (result.ok) {
+      await this.scheduleParseIfPending();
+      this.broadcastStateChange();
+    }
+    return result;
+  }
+
+  /** RPC: Email/set update. Per-email results; one broadcast. */
+  emailUpdate(accountId: string, updates: EmailUpdateInput[]): EmailUpdateResult {
+    this.init(accountId);
+    const result = this.ctx.storage.transactionSync(() => this.jmap.emailUpdate(updates));
+    if (result.oldState !== result.newState) this.broadcastStateChange();
+    return result;
+  }
+
+  /** RPC: Email/set destroy. Returns R2 blob ids to delete. */
+  emailDestroy(accountId: string, ids: string[]): EmailDestroyResult {
+    this.init(accountId);
+    const result = this.ctx.storage.transactionSync(() => this.jmap.emailDestroy(ids));
+    if (result.destroyed.length > 0) this.broadcastStateChange();
+    return result;
+  }
+
+  identitySettings(): IdentitySettingRow[] {
+    return this.jmap.identitySettings();
+  }
+
+  identitySettingsSet(
+    accountId: string,
+    updates: Record<string, IdentitySettingUpdate>,
+  ): { oldState: string; newState: string } {
+    this.init(accountId);
+    const oldState = this.jmap.state("Identity");
+    this.ctx.storage.transactionSync(() => {
+      for (const [address, update] of Object.entries(updates)) {
+        this.jmap.identitySettingsSet(address, update);
+      }
+    });
+    return { oldState, newState: this.jmap.state("Identity") };
+  }
+
+  submissionCreate(input: SubmissionCreateInput): SubmissionRow {
+    this.init(input.accountId);
+    const row = this.ctx.storage.transactionSync(() => this.jmap.submissionCreate(input));
+    this.broadcastStateChange();
+    return row;
+  }
+
+  submissionGet(ids: string[] | null) {
+    return this.jmap.submissionGet(ids);
+  }
+
+  submissionQuery(p: SubmissionQueryParams) {
+    return this.jmap.submissionQuery(p);
+  }
+
+  submissionDestroy(accountId: string, ids: string[]) {
+    this.init(accountId);
+    return this.ctx.storage.transactionSync(() => this.jmap.submissionDestroy(ids));
   }
 
   // ---------------------------------------------------------------------------------
