@@ -285,13 +285,24 @@ export async function deleteUserCompletely(env: Env, userId: string): Promise<vo
     .where(eq(schema.mailAccount.ownerUserId, userId));
   for (const a of accounts) await wipeAccountStorage(env, a.id);
   if (accounts.length > 0) {
-    // address rows go with the account (ON DELETE CASCADE)
-    await db.delete(schema.mailAccount).where(
-      inArray(
-        schema.mailAccount.id,
-        accounts.map((a) => a.id),
-      ),
-    );
+    const ids = accounts.map((a) => a.id);
+    // address rows go with the account (ON DELETE CASCADE); in the same batch, any domain
+    // catch-all that pointed at one of them is cleared so it cannot dangle.
+    await db.batch([
+      db
+        .update(schema.domain)
+        .set({ catchAllAddress: null })
+        .where(
+          inArray(
+            schema.domain.catchAllAddress,
+            db
+              .select({ address: schema.address.address })
+              .from(schema.address)
+              .where(inArray(schema.address.accountId, ids)),
+          ),
+        ),
+      db.delete(schema.mailAccount).where(inArray(schema.mailAccount.id, ids)),
+    ]);
   }
   const auth = await getAuth(env);
   const ctx = await auth.$context;

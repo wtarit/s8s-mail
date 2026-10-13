@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import { address } from "../db/schema";
+import { address, domain } from "../db/schema";
 import { blobKey, newMessageBlobId } from "../store/blob";
 import { accountStub } from "../store/subscribe";
 import { extractIngestHeaders, normalizeRecipient } from "./headers";
@@ -11,6 +11,10 @@ import { extractIngestHeaders, normalizeRecipient } from "./headers";
  * Kept minimal on purpose: Workers Free gives 10 ms CPU per invocation, so there is no MIME
  * parsing here. Steps: resolve the recipient in D1, stream the raw message into R2, write
  * the header-derived row through the account DO. The DO parses the body later (alarm).
+ *
+ * Routing: exact address (after lowercasing and `+tag` stripping) wins. Only on a miss is the
+ * recipient's domain consulted for a catch-all address (one extra D1 query, joined to the
+ * catch-all's account). Unserved domains and domains without a catch-all are rejected.
  */
 export async function handleEmail(
   message: ForwardableEmailMessage,
@@ -19,11 +23,19 @@ export async function handleEmail(
 ): Promise<void> {
   const recipient = normalizeRecipient(message.to);
   const db = drizzle(env.DB);
-  const target = await db
+  let target = await db
     .select({ accountId: address.accountId })
     .from(address)
     .where(eq(address.address, recipient))
     .get();
+  if (!target) {
+    target = await db
+      .select({ accountId: address.accountId })
+      .from(domain)
+      .innerJoin(address, eq(address.address, domain.catchAllAddress))
+      .where(eq(domain.name, recipient.slice(recipient.lastIndexOf("@") + 1)))
+      .get();
+  }
   if (!target) {
     message.setReject("5.1.1 Recipient address rejected");
     return;
