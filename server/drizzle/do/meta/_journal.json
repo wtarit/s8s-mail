@@ -15,6 +15,20 @@
       "when": 1791867494282,
       "tag": "0001_triggers_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791876037082,
+      "tag": "0002_clumsy_argent",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791876039943,
+      "tag": "0003_jmap_triggers",
+      "breakpoints": true
     }
   ]
 }

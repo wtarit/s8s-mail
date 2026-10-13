@@ -150,9 +150,64 @@ export const changeLog = sqliteTable(
   "change_log",
   {
     seq: integer("seq").primaryKey({ autoIncrement: true }),
-    type: text("type", { enum: ["Email", "Mailbox", "Thread", "EmailDelivery"] }).notNull(),
+    type: text("type", {
+      enum: ["Email", "Mailbox", "Thread", "EmailDelivery", "EmailSubmission", "Identity"],
+    }).notNull(),
     objectId: text("object_id").notNull(),
     kind: text("kind", { enum: ["created", "updated", "destroyed"] }).notNull(),
+    /**
+     * 1 for Mailbox "updated" entries that only moved the counts (an email joined/left the
+     * mailbox, or $seen/$draft changed); Mailbox/changes uses it for `updatedProperties`.
+     */
+    countsOnly: integer("counts_only").notNull().default(0),
   },
   (t) => [index("change_log_type_seq_idx").on(t.type, t.seq)],
+);
+
+/**
+ * Per-address Identity settings (name, signatures, reply-to, bcc). The Identity objects
+ * themselves are derived from the D1 `address` rows (primary + aliases); only what the user
+ * edits is stored here, keyed by the lowercased address. Triggers log type `Identity`.
+ */
+export const identitySetting = sqliteTable("identity_setting", {
+  address: text("address").primaryKey(),
+  name: text("name"),
+  replyTo: text("reply_to", { mode: "json" }).$type<EmailAddress[] | null>(),
+  bcc: text("bcc", { mode: "json" }).$type<EmailAddress[] | null>(),
+  textSignature: text("text_signature"),
+  htmlSignature: text("html_signature"),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export type DeliveryStatus = {
+  smtpReply: string;
+  delivered: "queued" | "yes" | "no" | "unknown";
+  displayed: "unknown" | "yes";
+};
+
+/**
+ * JMAP EmailSubmission (RFC 8621 §7). V1 sends synchronously through the outbound provider,
+ * so every row is `final`; there is no queue, retry or undo. `emailId` has no foreign key:
+ * a submission outlives the Email it was made from (the Sent copy may be deleted).
+ */
+export const emailSubmission = sqliteTable(
+  "email_submission",
+  {
+    id: text("id").primaryKey(), // id
+    identityId: text("identity_id").notNull(), // identityId
+    emailId: text("email_id").notNull(), // emailId
+    threadId: text("thread_id").notNull(), // threadId
+    envelopeMailFrom: text("envelope_mail_from").notNull(), // envelope.mailFrom.email
+    envelopeRcptTo: text("envelope_rcpt_to", { mode: "json" }).$type<string[]>().notNull(), // envelope.rcptTo[].email
+    sendAt: integer("send_at").notNull(), // sendAt (ms since epoch)
+    undoStatus: text("undo_status", { enum: ["pending", "final", "canceled"] })
+      .notNull()
+      .default("final"), // undoStatus
+    deliveryStatus: text("delivery_status", { mode: "json" }).$type<Record<
+      string,
+      DeliveryStatus
+    > | null>(), // deliveryStatus
+    providerMessageId: text("provider_message_id"),
+  },
+  (t) => [index("email_submission_email_idx").on(t.emailId)],
 );
