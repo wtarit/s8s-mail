@@ -1,30 +1,49 @@
+import { CloudflareProvider } from "./cloudflare";
+import type { SendEnv } from "./base";
+import { MailgunProvider } from "./mailgun";
+import { sendSystemMailVia } from "./system";
 import type { SendProvider, SystemMail } from "./types";
+import { SendError } from "./types";
 
 export * from "./types";
+export type { SendEnv } from "./base";
+export { CloudflareProvider, mapCloudflareError } from "./cloudflare";
+export type { CloudflareConfig } from "./cloudflare";
+export { MESSAGE_OVERHEAD_ALLOWANCE, base64WireSize, maxAttachmentBytes } from "./limits";
+export { MailgunProvider } from "./mailgun";
+export type { MailgunConfig } from "./mailgun";
+export { parseMailbox, sendSystemMailVia } from "./system";
 
 /**
- * Returns the deployment's configured provider (env.MAIL_PROVIDER).
- * TODO(send): implemented by the sending module (Mailgun + Cloudflare).
+ * Returns the deployment's configured provider (env.MAIL_PROVIDER). Construction is
+ * cheap and does no I/O; a provider that is selected but unusable (no MAILGUN_API
+ * secret, no `send_email` binding) fails at `send()` with a non-retryable SendError, so
+ * its limits can still be advertised.
  */
-export function getSendProvider(_env: Env): SendProvider {
-  throw new Error("getSendProvider: not implemented yet");
+export function getSendProvider(env: Env): SendProvider {
+  const e = env as Env & SendEnv;
+  switch (e.MAIL_PROVIDER) {
+    case "mailgun":
+      return new MailgunProvider({
+        apiKey: e.MAILGUN_API,
+        domain: e.MAILGUN_DOMAIN,
+        region: e.MAILGUN_REGION === "eu" ? "eu" : "us",
+      });
+    case "cloudflare":
+      return new CloudflareProvider({ binding: e.EMAIL });
+    default:
+      throw new SendError(
+        `Unknown MAIL_PROVIDER "${String(e.MAIL_PROVIDER)}" (expected "mailgun" or "cloudflare")`,
+        false,
+        "notConfigured",
+      );
+  }
 }
 
 /**
  * Builds a simple MIME message from `mail` (From = env.SYSTEM_MAIL_FROM) and
- * sends it through the configured provider.
- * TODO(send): implemented by the sending module.
+ * sends it through the configured provider. Throws `SendError`.
  */
-export async function sendSystemMail(_env: Env, _mail: SystemMail): Promise<void> {
-  throw new Error("sendSystemMail: not implemented yet");
-}
-
-/**
- * The largest total attachment size to advertise as JMAP
- * `maxSizeAttachmentsPerEmail`, derived from the provider's raw limit
- * minus MIME/base64 overhead.
- * TODO(send): implemented by the sending module.
- */
-export function maxAttachmentBytes(provider: SendProvider): number {
-  return Math.floor((provider.maxMessageBytes - 64 * 1024) * 0.73);
+export async function sendSystemMail(env: Env, mail: SystemMail): Promise<void> {
+  await sendSystemMailVia(getSendProvider(env), env.SYSTEM_MAIL_FROM, mail);
 }
