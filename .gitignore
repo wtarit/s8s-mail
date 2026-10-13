@@ -155,3 +155,4 @@ vite.config.ts.timestamp-*
 
 # Personal / test-environment notes for Claude (never commit)
 CLAUDE.local.md
+!.dev.vars.example

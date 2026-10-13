@@ -43,7 +43,7 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountDO"] }],
 
-  // Non-secret vars only. Secrets (MAILGUN_API_KEY, BETTER_AUTH_SECRET, ...) go through
+  // Non-secret vars only. Secrets (MAILGUN_API, BETTER_AUTH_SECRET, BOOTSTRAP_TOKEN, ...) go through
   // `wrangler secret put` and `.dev.vars` locally; never in this file.
   "vars": {
     "APP_NAME": "S8S Mail",
@@ -55,5 +55,10 @@
     "SYSTEM_MAIL_FROM": "S8S Mail <no-reply@example.com>",
     // Public origin of this Worker (Better Auth baseURL / OIDC issuer) — TODO(deploy).
     "PUBLIC_URL": "http://localhost:8787",
+    // Origin of the webmail (Bulwark Lite). Allowed for CORS on the OIDC/JMAP routes and used
+    // for the Bulwark OAuth client's redirect URI (`${WEBMAIL_ORIGIN}/oauth/callback`) — TODO(deploy).
+    "WEBMAIL_ORIGIN": "http://localhost:4173",
+    // client_id of the first-party public OAuth client created for the webmail.
+    "BULWARK_CLIENT_ID": "bulwark-lite",
   },
 }

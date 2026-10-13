@@ -137,14 +137,17 @@ Sources and full limit tables: `docs/research/2026-10-initial-research.md` §2.
 ### Better Auth on Workers (verified)
 
 - Needs the `nodejs_compat` flag.
-- Create the auth instance **per request**, since bindings are request-scoped.
+- The auth instance is built lazily and cached per `env` object (`createAuth(env)` in `server/src/auth/auth.ts`); never wrap the same D1 binding in two instances. Better Auth is imported dynamically (`getAuth(env)` in `server/src/auth/index.ts`) so `email()` and `/api/health` do not load it. `waitUntil` reaches it through `AsyncLocalStorage` (`request-context.ts`).
 - **Password hashing:** keep Better Auth's default.
   - `@better-auth/utils` resolves `./password` under the `workerd` export condition to native `node:crypto` scrypt (N=16384).
   - Check the built bundle picks that path, not the pure-JS fallback.
   - Do not use `@node-rs/argon2`; it is a native addon and won't load on Workers. `node:crypto` argon2 is also unsupported.
   - **Never hash passwords with WebCrypto PBKDF2.** Production workerd caps it at **100,000 iterations** on every plan (workerd#1346), below OWASP's 600k.
 - App-password / API-key checks must be cheap: random high-entropy keys, never scrypt per JMAP request.
-- D1 migrations: `@better-auth/cli generate`, then Drizzle, then `wrangler d1 migrations apply`. `auth migrate` cannot reach D1.
+- D1 migrations: regenerate `src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (run in `server/`; the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`, then `wrangler d1 migrations apply`. `auth migrate` cannot reach D1.
+- OAuth access tokens are **opaque** unless the client sends an RFC 8707 `resource` (no resources are registered, so in practice always opaque). JMAP validates them with `auth.api.oauth2UserInfo` (in-process, covers JWT and opaque); the client must request the `openid` scope.
+- `auth.api.verifyApiKey` writes a usage row to D1 on every call (100k writes/day on Free). `jmapAuth` therefore does a read-only lookup with the plugin's own SHA-256 hash (`defaultKeyHasher`).
+- Tests: the Worker entry is evaluated before a test file's `vi.mock` runs, so modules that tests mock (`../send`) must be imported lazily by Worker code (`src/auth/system-mail.ts`).
 - The JMAP API validates Better Auth JWT access tokens via JWKS. Load the keys directly or via a service binding, not an HTTP self-fetch to the same Worker.
 
 ## What Bulwark (the client) expects from our JMAP server
