@@ -13,6 +13,7 @@
     "build": "pnpm -r build"
   },
   "devDependencies": {
+    "cf": "1.0.0-beta.14",
     "oxfmt": "0.72.0",
     "oxlint": "1.87.0",
     "typescript": "7.0.2",
