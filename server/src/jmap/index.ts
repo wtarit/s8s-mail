@@ -20,7 +20,9 @@ export const jmapApp = new Hono<JmapEnv>({ strict: false });
 
 jmapApp.get("/session", async (c) => c.json(await buildSession(c.env, c.get("principal"))));
 jmapApp.post("/api", handleApi);
+// Both spellings: the parent app may be in strict mode (trailing slash significant).
 jmapApp.post("/upload/:accountId", handleUpload);
+jmapApp.post("/upload/:accountId/", handleUpload);
 jmapApp.get("/download/:accountId/:blobId/:name", handleDownload);
 jmapApp.get("/eventsource", handleEventSource);
 
