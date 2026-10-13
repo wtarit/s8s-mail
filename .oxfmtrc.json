@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 100,
+  "semi": true,
+  "singleQuote": false,
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.wrangler/**",
+    "**/worker-configuration.d.ts",
+    "web/src/components/ui/**",
+    "**/drizzle/**",
+    "pnpm-lock.yaml",
+    "**/*.md"
+  ]
+}
