@@ -41,7 +41,10 @@ import { formatDateTime } from "@/lib/format";
 import { useMe } from "@/lib/me";
 import { useResource } from "@/lib/use-resource";
 import { useT } from "@/i18n";
-import { AliasesDialog, EditUserDialog, InviteDialog, NewUserDialog } from "./user-dialogs";
+import { AliasesDialog } from "./aliases-dialog";
+import { EditUserDialog } from "./edit-user-dialog";
+import { InviteDialog } from "./invite-dialog";
+import { NewUserDialog } from "./new-user-dialog";
 
 type Action =
   | { kind: "invite"; user: AdminUser }
