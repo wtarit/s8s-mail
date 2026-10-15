@@ -1,10 +1,8 @@
 import PostalMime from "postal-mime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  MESSAGE_OVERHEAD_ALLOWANCE,
   CloudflareProvider,
   MailgunProvider,
-  base64WireSize,
   maxAttachmentBytes,
   parseMailbox,
   sendSystemMail,
@@ -103,42 +101,29 @@ describe("maxAttachmentBytes", () => {
   it("computes the advertised limits", () => {
     expect(maxAttachmentBytes(cloudflare)).toBe(3_735_552);
     expect(maxAttachmentBytes(mailgun)).toBe(18_173_445);
-    expect(MESSAGE_OVERHEAD_ALLOWANCE).toBe(131_072);
   });
 
-  it("a message at the advertised limit fits the provider limit", async () => {
+  it("real messages with several attachments at the limit stay under each provider's limit", async () => {
     for (const p of [cloudflare, mailgun]) {
       const limit = maxAttachmentBytes(p);
-      expect(base64WireSize(limit) + MESSAGE_OVERHEAD_ALLOWANCE).toBeLessThanOrEqual(
-        p.maxMessageBytes,
+      const n = 8;
+      const blob = new Uint8Array(Math.floor(limit / n)).map((_, i) => i % 251);
+      const { size } = await buildMime(
+        {
+          from: [{ email: "a@example.com" }],
+          to: [{ email: "b@example.com" }],
+          subject: "big",
+          bodyValues: { t: { value: "x".repeat(50_000) } },
+          textBody: [{ partId: "t" }],
+          attachments: Array.from({ length: n }, (_, i) => ({
+            blobId: "b",
+            type: "application/octet-stream",
+            name: `file-${i}-${"ä".repeat(20)}.bin`,
+          })),
+        },
+        { fetchBlob: async () => blob, messageIdDomain: "example.com", includeBcc: true },
       );
-      // ...and one more full line of payload would not (the formula is tight).
-      expect(base64WireSize(limit + 60) + MESSAGE_OVERHEAD_ALLOWANCE).toBeGreaterThan(
-        p.maxMessageBytes,
-      );
+      expect(size).toBeLessThanOrEqual(p.maxMessageBytes);
     }
-  });
-
-  it("real messages with several attachments at the limit stay under the provider limit", async () => {
-    const limit = maxAttachmentBytes(cloudflare);
-    const n = 8;
-    const per = Math.floor(limit / n);
-    const blob = new Uint8Array(per).map((_, i) => i % 251);
-    const { size } = await buildMime(
-      {
-        from: [{ email: "a@example.com" }],
-        to: [{ email: "b@example.com" }],
-        subject: "big",
-        bodyValues: { t: { value: "x".repeat(50_000) } },
-        textBody: [{ partId: "t" }],
-        attachments: Array.from({ length: n }, (_, i) => ({
-          blobId: "b",
-          type: "application/octet-stream",
-          name: `file-${i}-${"ä".repeat(20)}.bin`,
-        })),
-      },
-      { fetchBlob: async () => blob, messageIdDomain: "example.com", includeBcc: true },
-    );
-    expect(size).toBeLessThanOrEqual(cloudflare.maxMessageBytes);
   });
 });

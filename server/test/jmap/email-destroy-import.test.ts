@@ -4,6 +4,7 @@ import { runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { accountStub } from "../../src/store/subscribe";
 import { call, resp, setupAccount } from "../helpers/jmap";
+import { r2Keys } from "../helpers/ingest";
 import { bytes, installMailgunFetchMock, upload } from "../helpers/jmap-send";
 
 installMailgunFetchMock();
@@ -14,6 +15,7 @@ describe("drafts and sending", () => {
     const raw =
       "From: Bob <bob@example.com>\r\nTo: snd-4@example.com\r\nSubject: Imported\r\nMessage-ID: <imp1@example.com>\r\nDate: Mon, 12 Oct 2026 10:00:00 +0000\r\n\r\nImported body\r\n";
     const up = await upload(app, accountId, bytes(raw), "message/rfc822");
+    const keysAfterUpload = await r2Keys(accountId);
     const imp = await call(app, [
       [
         "Email/import",
@@ -57,12 +59,15 @@ describe("drafts and sending", () => {
       preview: "Imported body",
     });
 
-    expect(await env.BLOBS.head(`snd-4/${created.blobId}`)).not.toBeNull();
-    expect(await env.BLOBS.head(`snd-4/${created.blobId}-1`)).not.toBeNull();
+    const dlUrl = `/jmap/download/${accountId}/${created.blobId}/m.eml`;
+    expect((await app.request(dlUrl, {}, env)).status).toBe(200);
+    // Importing (and parsing) stored data beyond the uploaded blob.
+    expect((await r2Keys(accountId)).length).toBeGreaterThan(keysAfterUpload.length);
     const d = await call(app, [["Email/set", { accountId, destroy: [created.id, "ghost"] }, "d"]]);
     expect(resp(d).args.destroyed).toEqual([created.id]);
     expect(resp(d).args.notDestroyed.ghost.type).toBe("notFound");
-    expect(await env.BLOBS.head(`snd-4/${created.blobId}`)).toBeNull();
-    expect(await env.BLOBS.head(`snd-4/${created.blobId}-1`)).toBeNull();
+    // Everything the email stored is gone; only the separately uploaded blob remains.
+    expect(await r2Keys(accountId)).toEqual(keysAfterUpload);
+    expect((await app.request(dlUrl, {}, env)).status).toBe(404);
   });
 });

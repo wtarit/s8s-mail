@@ -137,8 +137,13 @@ describe("drafts and sending", () => {
     expect(e.mailboxIds).toEqual({ [box("sent")]: true });
     expect(e.keywords).toEqual({ $seen: true });
     expect(e.bcc).toEqual([{ name: null, email: "secret@example.net" }]);
-    const stored = await env.BLOBS.get(`snd-1/${emailSet![1].created["send-1"].blobId}`);
-    expect(await stored!.text()).toMatch(/^Bcc: .*secret@example\.net/im);
+    const stored = await app.request(
+      `/jmap/download/${accountId}/${emailSet![1].created["send-1"].blobId}/sent.eml`,
+      {},
+      env,
+    );
+    expect(stored.status).toBe(200);
+    expect(await stored.text()).toMatch(/^Bcc: .*secret@example\.net/im);
 
     // After the parse alarm the attachment is downloadable from the sent copy
     await runDurableObjectAlarm(accountStub(env, accountId));

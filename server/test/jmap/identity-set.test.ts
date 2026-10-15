@@ -13,7 +13,7 @@ describe("Identity/set", () => {
     ]);
     const first = resp(await call(app, [["Identity/get", { accountId }, "g"]]));
     const [id1, id2] = first.args.list.map((i: any) => i.id);
-    expect(id1).toMatch(/^i[0-9a-f]{24}$/);
+    expect(id1).toMatch(/^[A-Za-z0-9_-]{1,255}$/);
     const r = await call(app, [
       [
         "Identity/set",

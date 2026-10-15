@@ -28,7 +28,7 @@ describe("removeBccHeader", () => {
 
   it("returns the input when there is no Bcc header", () => {
     const raw = enc.encode("To: y@example.com\r\n\r\nBcc: only in body\r\n");
-    expect(removeBccHeader(raw)).toBe(raw);
+    expect(removeBccHeader(raw)).toEqual(raw);
   });
 
   it("strips Bcc from a built message but keeps it parseable", async () => {

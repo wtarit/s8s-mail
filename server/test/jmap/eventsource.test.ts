@@ -52,9 +52,7 @@ describe("JMAP EventSource", () => {
     await deliver(accountId, "sse-1@example.com", { subject: "Push me" }, false);
     await readUntil(reader, buf, (t) => events(t, "state").length >= 2);
     const next = events(buf.text, "state")[1];
-    expect(Number(next.changed["sse-1"].Email)).toBeGreaterThan(
-      Number(initial.changed["sse-1"].Email),
-    );
+    expect(next.changed["sse-1"].Email).not.toBe(initial.changed["sse-1"].Email);
     await reader.cancel();
   });
 

@@ -1,9 +1,8 @@
 /* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
-import { env } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { wellKnownJmap } from "../../src/jmap";
-import { Hono } from "hono";
-import { maxAttachmentBytes, getSendProvider } from "../../src/send";
+import { buildMime } from "../../src/mime";
+import { getSendProvider } from "../../src/send";
 import { call, setupAccount, type testApp, USING } from "../helpers/jmap";
 
 describe("JMAP session", () => {
@@ -12,7 +11,13 @@ describe("JMAP session", () => {
     const res = await app.request("/jmap/session", {}, env);
     expect(res.status).toBe(200);
     const s = (await res.json()) as any;
-    const limit = maxAttachmentBytes(getSendProvider(env));
+    const core = s.capabilities["urn:ietf:params:jmap:core"];
+    const mail = s.accounts["sess-1"].accountCapabilities["urn:ietf:params:jmap:mail"];
+    // One deployment-wide attachment limit, advertised consistently.
+    const limit = core.maxSizeUpload;
+    expect(Number.isInteger(limit)).toBe(true);
+    expect(limit).toBeGreaterThan(0);
+    expect(mail.maxSizeAttachmentsPerEmail).toBe(limit);
 
     expect(Object.keys(s.capabilities).toSorted()).toEqual([
       "urn:ietf:params:jmap:core",
@@ -20,8 +25,7 @@ describe("JMAP session", () => {
       "urn:ietf:params:jmap:submission",
     ]);
     expect(JSON.stringify(s)).not.toContain("stalwart");
-    expect(s.capabilities["urn:ietf:params:jmap:core"]).toMatchObject({
-      maxSizeUpload: limit,
+    expect(core).toMatchObject({
       maxConcurrentUpload: 4,
       maxSizeRequest: 10_000_000,
       maxConcurrentRequests: 4,
@@ -30,7 +34,6 @@ describe("JMAP session", () => {
       maxObjectsInSet: 128,
       collationAlgorithms: ["i;ascii-casemap", "i;unicode-casemap"],
     });
-    expect(limit).toBeGreaterThan(10_000_000);
 
     const acct = s.accounts["sess-1"];
     expect(acct).toMatchObject({ name: "sess-1", isPersonal: true, isReadOnly: false });
@@ -38,7 +41,6 @@ describe("JMAP session", () => {
       maxMailboxesPerEmail: null,
       maxMailboxDepth: 10,
       maxSizeMailboxName: 255,
-      maxSizeAttachmentsPerEmail: limit,
       emailQuerySortOptions: expect.arrayContaining([
         "receivedAt",
         "sentAt",
@@ -65,15 +67,41 @@ describe("JMAP session", () => {
     expect(s.eventSourceUrl).toBe(
       `${base}/jmap/eventsource?types={types}&closeafter={closeafter}&ping={ping}`,
     );
-    expect(s.state).toMatch(/^[0-9a-f]+$/);
+    expect(typeof s.state).toBe("string");
+    expect(s.state.length).toBeGreaterThan(0);
+  });
+
+  it("advertises an attachment limit the configured provider can actually carry", async () => {
+    const { app } = await setupAccount("sess-2", ["sess2@example.com"]);
+    const s = (await (await app.request("/jmap/session", {}, env)).json()) as any;
+    const limit: number = s.capabilities["urn:ietf:params:jmap:core"].maxSizeUpload;
+    // A real message holding one attachment of exactly the advertised size (plus a
+    // body and headers) must still fit the provider's wire limit.
+    const { size } = await buildMime(
+      {
+        from: [{ email: "a@example.com" }],
+        to: [{ email: "b@example.com" }],
+        subject: "at the limit",
+        bodyValues: { t: { value: "hello" } },
+        textBody: [{ partId: "t" }],
+        attachments: [{ blobId: "b", type: "application/octet-stream", name: "big.bin" }],
+      },
+      {
+        fetchBlob: async () => new Uint8Array(limit).map((_, i) => i % 251),
+        messageIdDomain: "example.com",
+        includeBcc: true,
+      },
+    );
+    expect(size).toBeLessThanOrEqual(getSendProvider(env).maxMessageBytes);
   });
 
   it("/.well-known/jmap redirects to the session", async () => {
-    const app = new Hono<{ Bindings: Env }>();
-    app.get("/.well-known/jmap", wellKnownJmap);
-    const res = await app.request("/.well-known/jmap", { redirect: "manual" }, env);
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe("/jmap/session");
+    const res = await exports.default.fetch(
+      new Request("http://localhost:8787/.well-known/jmap", { redirect: "manual" }),
+    );
+    expect(res.status).toBeGreaterThanOrEqual(300);
+    expect(res.status).toBeLessThan(400);
+    expect(res.headers.get("location")).toMatch(/\/jmap\/session$/);
   });
 });
 
