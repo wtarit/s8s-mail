@@ -1,6 +1,7 @@
 import type { ApiError } from "@s8s/shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { errorFields } from "../log";
 
 /** Thrown by route code; `onError` turns it into an `apiError` JSON body. */
 export class ApiHttpError extends Error {
@@ -29,7 +30,12 @@ export function respondError(c: Context, err: unknown): Response {
     const message = String(err.body?.message ?? err.body?.error_description ?? err.message);
     return c.json(errorBody(code, message), status);
   }
-  console.error("unhandled error", err instanceof Error ? (err.stack ?? err.message) : err);
+  console.error({
+    msg: "unhandled error",
+    method: c.req.method,
+    path: c.req.path,
+    ...errorFields(err, { stack: true }),
+  });
   return c.json(errorBody("internal_error", "Internal server error"), 500);
 }
 

@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { getDb, schema, type Db } from "../db";
+import { errorFields } from "../log";
 import { AUTH_BASE_PATH, jmapResourceIdentifier, publicOrigin } from "./config";
 import { runInBackground } from "./request-context";
 import type { AppEnv, Principal } from "./types";
@@ -275,7 +276,7 @@ export const jmapAuth = createMiddleware<AppEnv>(async (c, next) => {
     if (scheme === "bearer") principal = await authenticateBearer(c.env, db, credentials);
     else if (scheme === "basic") principal = await authenticateBasic(db, credentials);
   } catch (err) {
-    console.error("jmapAuth failed", err instanceof Error ? err.message : err);
+    console.error({ msg: "jmap auth failed", ...errorFields(err) });
     return unauthorized();
   }
   if (!principal) return unauthorized("Invalid credentials");

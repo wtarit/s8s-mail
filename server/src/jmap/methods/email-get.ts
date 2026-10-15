@@ -13,6 +13,7 @@ import {
 } from "../rawheaders";
 import type { MethodDef } from "../registry";
 import { CAP_MAIL, LIMITS } from "../types";
+import { errorFields } from "../../log";
 import { checkCount, utcDate } from "../util";
 import { changesArgs, getArgs, parseArgs } from "./helpers";
 import { changesResponse } from "./mailbox";
@@ -224,7 +225,13 @@ async function emailGet(ctx: MethodContext, raw: Record<string, unknown>) {
       try {
         onDemand.set(row.id, await parseMessage(obj.body, row.blobId));
       } catch (err) {
-        console.error("on-demand parse failed", err);
+        console.error({
+          msg: "on-demand parse failed",
+          accountId,
+          emailId: row.id,
+          blobId: row.blobId,
+          ...errorFields(err, { stack: true }),
+        });
       }
     }
   }

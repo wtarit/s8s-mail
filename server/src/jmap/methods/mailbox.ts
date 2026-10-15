@@ -3,6 +3,7 @@ import { MethodError } from "../errors";
 import type { MailboxRow } from "../../store/jmap-types";
 import type { MethodContext } from "../context";
 import type { MethodDef } from "../registry";
+import { errorFields } from "../../log";
 import { CAP_MAIL, LIMITS, type SetError } from "../types";
 import { checkCount } from "../util";
 import { changesArgs, getArgs, parseArgs, pick, propertySet } from "./helpers";
@@ -288,10 +289,16 @@ async function mailboxSet(ctx: MethodContext, raw: Record<string, unknown>) {
 export async function deleteBlobs(env: Env, accountId: string, blobIds: string[]): Promise<void> {
   const keys = blobIds.map((b) => `${accountId}/${b}`);
   for (let i = 0; i < keys.length; i += 500) {
+    const batch = keys.slice(i, i + 500);
     try {
-      await env.BLOBS.delete(keys.slice(i, i + 500));
+      await env.BLOBS.delete(batch);
     } catch (err) {
-      console.error("R2 cleanup failed", err);
+      console.error({
+        msg: "r2 cleanup failed",
+        accountId,
+        keyCount: batch.length,
+        ...errorFields(err, { stack: true }),
+      });
     }
   }
 }

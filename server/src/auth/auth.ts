@@ -16,6 +16,7 @@ import {
   jmapResource,
   publicOrigin,
 } from "./config";
+import { errorFields } from "../log";
 import { inviteSession } from "./invite-session-plugin";
 import { runInBackground } from "./request-context";
 import { sendSystemMailLazy } from "./system-mail";
@@ -118,10 +119,7 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
               }),
             );
           } catch (err) {
-            console.error(
-              "magic link: could not queue email",
-              err instanceof Error ? err.message : err,
-            );
+            console.error({ msg: "magic link email not queued", ...errorFields(err) });
           }
         },
       }),

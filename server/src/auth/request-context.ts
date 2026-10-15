@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { errorFields } from "../log";
 
 /**
  * The Better Auth instance is cached per isolate but `waitUntil` belongs to one request, so the
@@ -13,7 +14,7 @@ export function runWithWaitUntil<T>(waitUntil: (p: Promise<unknown>) => void, fn
 /** Runs `p` after the response is sent when a request context exists; errors are logged, never thrown. */
 export function runInBackground(p: Promise<unknown>): void {
   const guarded = p.catch((err: unknown) => {
-    console.error("background task failed", err instanceof Error ? err.message : err);
+    console.error({ msg: "background task failed", ...errorFields(err) });
   });
   const ctx = store.getStore();
   if (ctx) ctx.waitUntil(guarded);

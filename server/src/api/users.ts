@@ -3,6 +3,7 @@ import { and, asc, count, eq, gt, inArray, isNotNull, isNull, max, sql } from "d
 import { getAuth } from "../auth";
 import { runInBackground } from "../auth/request-context";
 import { sendSystemMailLazy } from "../auth/system-mail";
+import { errorFields } from "../log";
 import { getDb, schema, type Db } from "../db";
 import { ApiHttpError } from "./errors";
 import { randomHex, randomToken, sha256Hex } from "./util";
@@ -269,10 +270,7 @@ async function wipeAccountStorage(env: Env, accountId: string): Promise<void> {
     };
     await stub.deleteAll?.();
   } catch (err) {
-    console.error(
-      `AccountDO.deleteAll(${accountId}) failed`,
-      err instanceof Error ? err.message : err,
-    );
+    console.error({ msg: "account do deleteAll failed", accountId, ...errorFields(err) });
   }
 }
 

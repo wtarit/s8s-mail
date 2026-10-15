@@ -4,6 +4,7 @@ import { MethodContext } from "./context";
 import { MethodError, REQUEST_ERRORS, RequestError } from "./errors";
 import { resolveResultReferences } from "./references";
 import { methods } from "./methods/index";
+import { errorFields } from "../log";
 import { MultiResponse } from "./registry";
 import {
   LIMITS,
@@ -86,7 +87,12 @@ async function runCall(
     if (err instanceof z.ZodError) {
       return fail(new MethodError("invalidArguments", describeZod(err)));
     }
-    console.error(`JMAP ${name} failed`, err);
+    console.error({
+      msg: "jmap method failed",
+      method: name,
+      userId: ctx.principal.userId,
+      ...errorFields(err, { stack: true }),
+    });
     return fail(new MethodError("serverFail", "An internal error occurred"));
   }
 }

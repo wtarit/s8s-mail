@@ -7,6 +7,7 @@
  * client disconnects the sockets are closed and the DOs can hibernate.
  */
 import type { Context } from "hono";
+import { errorFields } from "../log";
 import { accountStub, subscribeToAccount } from "../store/subscribe";
 import type { StateChangeMessage } from "../store/types";
 import type { JmapEnv } from "./types";
@@ -106,7 +107,7 @@ export async function handleEventSource(c: Context<JmapEnv>): Promise<Response> 
           emitState(changed, true);
         }
       } catch (err) {
-        console.error("eventsource setup failed", err);
+        console.error({ msg: "eventsource setup failed", ...errorFields(err, { stack: true }) });
         cleanup();
         return;
       }
