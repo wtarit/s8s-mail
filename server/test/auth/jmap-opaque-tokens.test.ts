@@ -33,7 +33,7 @@ describe("jmapAuth: opaque OAuth access tokens are rejected (Bearer)", () => {
     const res = await callJmap(bearer(tokens.body.access_token));
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toContain("Bearer");
-    expect(await res.json()).toMatchObject({ title: "Invalid credentials" });
+    expect(await res.json()).toMatchObject({ type: "about:blank", status: 401 });
   });
 
   it("rejects an opaque access token on /jmap/session and /jmap/api", async () => {

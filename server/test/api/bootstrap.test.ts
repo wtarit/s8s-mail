@@ -1,8 +1,8 @@
-import { env } from "cloudflare:workers";
 import { apiError } from "@s8s/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
-import { BOOTSTRAP_TOKEN, request, resetDb, type Json } from "../helpers";
+import { BOOTSTRAP_TOKEN, acceptInvite, request, resetDb, type Json } from "../helpers";
+import { REDIRECT, authorize } from "../helpers/auth-jmap";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 const send = vi.mocked(sendSystemMail);
@@ -45,24 +45,32 @@ describe("bootstrap", () => {
     expect(first.status).toBe(201);
     expect(first.body.invite.url).toMatch(/^http:\/\/localhost:8787\/invite\/[\w-]{40,}$/);
 
-    // domain, mail account, primary address and the webmail OAuth client exist
-    expect((await env.DB.prepare("SELECT name FROM domain").all()).results).toEqual([
-      { name: "example.com" },
-    ]);
-    expect((await env.DB.prepare("SELECT address, kind FROM address").all()).results).toEqual([
-      { address: "admin@example.com", kind: "primary" },
-    ]);
-    const client = await env.DB.prepare(
-      "SELECT client_id, skip_consent, client_secret, redirect_uris FROM oauth_client",
-    ).first<Record<string, unknown>>();
-    expect(client).toMatchObject({
-      client_id: "bulwark-lite",
-      skip_consent: 1,
-      client_secret: null,
+    // the invite lets the admin in; the account, address and domain exist
+    const admin = await acceptInvite(first.body.invite.url);
+    const me = await request<Json>("/api/me", { cookie: admin.cookie });
+    expect(me.body.user).toMatchObject({ email: "admin@example.com", role: "admin" });
+    expect(me.body.accounts).toHaveLength(1);
+    expect(me.body.accounts[0]).toMatchObject({
+      name: "Admin",
+      addresses: [{ address: "admin@example.com", kind: "primary" }],
     });
-    expect(JSON.parse(JSON.parse(client!.redirect_uris as string))).toEqual([
-      "http://localhost:4173/oauth/callback",
+    const domains = await request<Json>("/api/admin/domains", { cookie: admin.cookie });
+    expect(domains.body.domains).toMatchObject([{ name: "example.com", addressCount: 1 }]);
+
+    // the webmail OAuth client is registered, trusted and public, and the flow works with it
+    const clients = await request<Json>("/api/admin/oauth-clients", { cookie: admin.cookie });
+    expect(clients.body.clients).toMatchObject([
+      {
+        clientId: "bulwark-lite",
+        trusted: true,
+        public: true,
+        redirectUris: ["http://localhost:4173/oauth/callback"],
+      },
     ]);
+    const { location } = await authorize(admin);
+    expect(location.origin + location.pathname).toBe(REDIRECT);
+    expect(location.searchParams.get("code")).toBeTruthy();
+
     // the invite went to the recovery address
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(send.mock.calls[0]![1].to).toBe("r@example.org");

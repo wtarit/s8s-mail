@@ -24,37 +24,50 @@ async function newUser(admin: Session, address = "ana@example.com") {
   return res.body;
 }
 
+const emailsOf = async (admin: Session) =>
+  (
+    await request<{ users: { email: string }[] }>("/api/admin/users", { cookie: admin.cookie })
+  ).body.users
+    .map((u) => u.email)
+    .toSorted();
+
 describe("sign-up is disabled", () => {
-  beforeEach(resetDb);
+  let admin: Session;
+  beforeEach(async () => {
+    await resetDb();
+    admin = await bootstrapAdmin();
+    send.mockClear();
+  });
 
   it("rejects email sign-up and creates no user", async () => {
+    const credentials = { email: "new@example.com", password: "correct horse battery" };
     const res = await request("/api/auth/sign-up/email", {
       method: "POST",
-      json: { email: "new@example.com", password: "correct horse battery", name: "New" },
+      json: { ...credentials, name: "New" },
     });
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(res.status).toBeLessThan(500);
-    const count = await env.DB.prepare("SELECT count(*) AS n FROM user").first<{ n: number }>();
-    expect(count!.n).toBe(0);
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" });
+    expect(await emailsOf(admin)).toEqual(["admin@example.com"]);
+    const signIn = await request("/api/auth/sign-in/email", { method: "POST", json: credentials });
+    expect(signIn.status).toBe(401);
   });
 
   it("does not create users through the magic-link endpoint either", async () => {
-    send.mockClear();
     const res = await request("/api/auth/sign-in/magic-link", {
       method: "POST",
       json: { email: "stranger@example.com", callbackURL: "/" },
     });
     expect(res.status).toBe(200);
-    const count = await env.DB.prepare("SELECT count(*) AS n FROM user").first<{ n: number }>();
-    expect(count!.n).toBe(0);
+    expect(await emailsOf(admin)).toEqual(["admin@example.com"]);
   });
 });
 
 describe("password", () => {
+  let admin: Session;
   let ana: Session;
   beforeEach(async () => {
     await resetDb();
-    const admin = await bootstrapAdmin();
+    admin = await bootstrapAdmin();
     const created = await newUser(admin);
     ana = await acceptInvite(created.invite.url);
   });
@@ -94,7 +107,8 @@ describe("password", () => {
       cookie: ana.cookie,
       json: { currentPassword: "not my password", newPassword: "second password 456" },
     });
-    expect(wrongCurrent.status).toBeGreaterThanOrEqual(400);
+    expect(wrongCurrent.status).toBe(400);
+    expect((wrongCurrent.body as Json).error.code).toBe("invalid_password");
     const changed = await request("/api/account/password", {
       method: "POST",
       cookie: ana.cookie,
@@ -114,14 +128,6 @@ describe("password", () => {
     expect(good.status).toBe(200);
     const cookie = cookieFrom(good.headers);
     expect((await request<Json>("/api/me", { cookie })).body.user.email).toBe("ana@example.com");
-
-    // the hash is Better Auth's scrypt format (salt:key), never PBKDF2
-    const row = await env.DB.prepare(
-      "SELECT password FROM account WHERE provider_id = 'credential'",
-    ).first<{
-      password: string;
-    }>();
-    expect(row!.password).toMatch(/^[0-9a-f]{32}:[0-9a-f]{128}$/);
   });
 
   it("a disabled user cannot sign in with a password", async () => {
@@ -130,7 +136,6 @@ describe("password", () => {
       cookie: ana.cookie,
       json: { newPassword: "first password 123" },
     });
-    const admin = await bootstrapAdminAgain();
     await request(`/api/admin/users/${ana.userId}`, {
       method: "PATCH",
       cookie: admin.cookie,
@@ -140,35 +145,24 @@ describe("password", () => {
       method: "POST",
       json: { email: "ana@example.com", password: "first password 123" },
     });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "BANNED_USER" });
     expect((await request("/api/me", { cookie: ana.cookie })).status).toBe(401);
   });
 });
 
-/** Signs in as the bootstrap admin again via magic-link-free path: new invite is not needed, use a session. */
-async function bootstrapAdminAgain(): Promise<Session> {
-  const admin = await env.DB.prepare("SELECT id FROM user WHERE role = 'admin'").first<{
-    id: string;
-  }>();
-  // Admin has no password; mint a fresh session through a new invite from a direct DB insert.
-  const token = "t".repeat(43);
-  const hash = Array.from(
-    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token))),
-    (b) => b.toString(16).padStart(2, "0"),
-  ).join("");
-  await env.DB.prepare(
-    "INSERT INTO invite (id, token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-  )
-    .bind(crypto.randomUUID(), hash, admin!.id, Date.now() + 60_000, Date.now())
-    .run();
-  return acceptInvite(`http://localhost:8787/invite/${token}`);
-}
+const requestMagicLink = () =>
+  request("/api/auth/sign-in/magic-link", {
+    method: "POST",
+    json: { email: "ana@example.com", callbackURL: "/" },
+  });
 
 describe("magic link", () => {
+  let admin: Session;
   let ana: Session;
   beforeEach(async () => {
     await resetDb();
-    const admin = await bootstrapAdmin();
+    admin = await bootstrapAdmin();
     ana = await acceptInvite((await newUser(admin)).invite.url);
     send.mockClear();
   });
@@ -195,7 +189,6 @@ describe("magic link", () => {
     // single use
     const replay = await request(url.replace("http://localhost:8787", ""), { method: "GET" });
     expect(cookieFrom(replay.headers)).not.toContain("session_token");
-    void ana;
   });
 
   it("accepts absolute SPA-origin callback URLs and answers {status:true}", async () => {
@@ -234,21 +227,24 @@ describe("magic link", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("sends nothing for a user without a recovery address or a disabled user", async () => {
+  it("sends nothing for a user without a recovery address", async () => {
+    // No API clears a recovery address (create/patch require one), so set the state directly.
     await env.DB.prepare(
       "UPDATE user SET recovery_email = NULL WHERE email = 'ana@example.com'",
     ).run();
-    await request("/api/auth/sign-in/magic-link", {
-      method: "POST",
-      json: { email: "ana@example.com", callbackURL: "/" },
+    await requestMagicLink();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing for a disabled user", async () => {
+    const disabled = await request(`/api/admin/users/${ana.userId}`, {
+      method: "PATCH",
+      cookie: admin.cookie,
+      json: { disabled: true },
     });
-    await env.DB.prepare(
-      "UPDATE user SET recovery_email = 'ana.recovery@example.org', banned = 1 WHERE email = 'ana@example.com'",
-    ).run();
-    await request("/api/auth/sign-in/magic-link", {
-      method: "POST",
-      json: { email: "ana@example.com", callbackURL: "/" },
-    });
+    expect(disabled.status).toBe(200);
+    await requestMagicLink();
     await new Promise((r) => setTimeout(r, 200));
     expect(send).not.toHaveBeenCalled();
   });

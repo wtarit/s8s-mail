@@ -1,4 +1,3 @@
-import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acceptInvite,
@@ -16,11 +15,9 @@ function patchDomain(cookie: string, name: string, json: unknown) {
   return request<Json>(`/api/admin/domains/${name}`, { method: "PATCH", cookie, json });
 }
 
-async function catchAllOf(name = "example.com") {
-  const row = await env.DB.prepare("SELECT catch_all_address AS c FROM domain WHERE name = ?")
-    .bind(name)
-    .first<{ c: string | null }>();
-  return row?.c;
+async function catchAllOf(cookie: string, name = "example.com") {
+  const res = await request<Json>("/api/admin/domains", { cookie });
+  return res.body.domains.find((d: Json) => d.name === name)?.catchAllAddress;
 }
 
 describe("admin: aliases and domains", () => {
@@ -161,7 +158,7 @@ describe("admin: aliases and domains", () => {
       });
       expect(set.status).toBe(200);
       expect(set.body.domains[0].catchAllAddress).toBe("admin@example.com");
-      expect(await catchAllOf()).toBe("admin@example.com");
+      expect(await catchAllOf(admin.cookie)).toBe("admin@example.com");
 
       // an alias on another served domain is fine too
       await request("/api/admin/domains", {
@@ -182,7 +179,7 @@ describe("admin: aliases and domains", () => {
       expect(
         cleared.body.domains.find((d: Json) => d.name === "example.com").catchAllAddress,
       ).toBeNull();
-      expect(await catchAllOf()).toBeNull();
+      expect(await catchAllOf(admin.cookie)).toBeNull();
     });
 
     it("validates: unknown domain 404, unknown address 400, bad body 400", async () => {
@@ -199,7 +196,7 @@ describe("admin: aliases and domains", () => {
           .status,
       ).toBe(400);
       expect((await patchDomain(admin.cookie, "example.com", {})).status).toBe(400);
-      expect(await catchAllOf()).toBeNull();
+      expect(await catchAllOf(admin.cookie)).toBeNull();
     });
 
     it("lists every address with its kind and account name", async () => {
@@ -229,8 +226,8 @@ describe("admin: aliases and domains", () => {
         { method: "DELETE", cookie: admin.cookie },
       );
       expect(del.status).toBe(200);
-      expect(await catchAllOf("example.com")).toBeNull();
-      expect(await catchAllOf("example.net")).toBe("admin@example.com");
+      expect(await catchAllOf(admin.cookie, "example.com")).toBeNull();
+      expect(await catchAllOf(admin.cookie, "example.net")).toBe("admin@example.com");
     });
 
     it("is cleared (on every domain) when the owning user is deleted", async () => {
@@ -248,8 +245,8 @@ describe("admin: aliases and domains", () => {
         cookie: admin.cookie,
       });
       expect(del.status).toBe(200);
-      expect(await catchAllOf("example.com")).toBeNull();
-      expect(await catchAllOf("example.net")).toBeNull();
+      expect(await catchAllOf(admin.cookie, "example.com")).toBeNull();
+      expect(await catchAllOf(admin.cookie, "example.net")).toBeNull();
     });
   });
 });
