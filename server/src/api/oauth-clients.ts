@@ -1,8 +1,8 @@
 import type { z } from "zod";
 import type { createOAuthClientRequest, oauthClient } from "@s8s/shared";
 import { eq } from "drizzle-orm";
-import { getAuth } from "../auth";
-import { OAUTH_SCOPES } from "../auth/config";
+import { getAuth, type Auth } from "../auth";
+import { OAUTH_SCOPES, jmapResource } from "../auth/config";
 import { getDb, schema } from "../db";
 import { ApiHttpError } from "./errors";
 
@@ -86,7 +86,9 @@ export async function createOAuthClient(
 /**
  * Idempotently creates/updates the first-party public client for the webmail (Bulwark):
  * client_id = BULWARK_CLIENT_ID, redirect `${WEBMAIL_ORIGIN}/oauth/callback`, PKCE, no secret,
- * consent skipped.
+ * consent skipped. Also makes sure the JMAP OAuth resource exists and is linked to the client
+ * (`oauth_client_resource`), so the client may request `resource=<origin>/jmap` and receive JWT
+ * access tokens.
  */
 export async function ensureBulwarkClient(env: Env): Promise<OAuthClientView> {
   const clientId = env.BULWARK_CLIENT_ID;
@@ -123,5 +125,61 @@ export async function ensureBulwarkClient(env: Env): Promise<OAuthClientView> {
       forceAllowId: true,
     });
   }
+  await ensureJmapResourceLink(ctx, env, clientId);
   return getOAuthClientView(env, clientId);
+}
+
+/**
+ * Idempotently makes sure the JMAP resource row exists with the configured policy (the provider
+ * seeds it too, but only once per process and not after a table wipe) and that `clientId` is
+ * linked to it. The provider enforces the link on authorize/token requests that carry `resource`.
+ * Uses the adapter directly: the provider's admin endpoints need an admin session.
+ */
+async function ensureJmapResourceLink(
+  ctx: Awaited<Auth["$context"]>,
+  env: Env,
+  clientId: string,
+): Promise<void> {
+  const resource = jmapResource(env);
+  const where = [{ field: "identifier", value: resource.identifier }];
+  const now = new Date();
+  const existing = await ctx.adapter.findOne<{
+    accessTokenTtl?: number | null;
+    disabled?: boolean;
+  }>({
+    model: "oauthResource",
+    where,
+  });
+  if (!existing) {
+    await ctx.adapter.create({
+      model: "oauthResource",
+      data: {
+        ...resource,
+        dpopBoundAccessTokensRequired: false,
+        disabled: false,
+        policyVersion: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+  } else if (existing.accessTokenTtl !== resource.accessTokenTtl || existing.disabled) {
+    await ctx.adapter.update({
+      model: "oauthResource",
+      where,
+      update: { accessTokenTtl: resource.accessTokenTtl, disabled: false, updatedAt: now },
+    });
+  }
+  const linked = await ctx.adapter.findOne({
+    model: "oauthClientResource",
+    where: [
+      { field: "clientId", value: clientId },
+      { field: "resourceId", value: resource.identifier },
+    ],
+  });
+  if (!linked) {
+    await ctx.adapter.create({
+      model: "oauthClientResource",
+      data: { clientId, resourceId: resource.identifier, createdAt: now },
+    });
+  }
 }
