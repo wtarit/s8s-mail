@@ -105,6 +105,19 @@ Where the Bearer path's extra time goes (local ms/request, inclusive, overlappin
 
 JWT Bearer now costs about the same as Basic locally (within ~0.7 ms). Production confirmation is still pending.
 
+**Production result (2026-10-15, test deployment on Workers Free, JWT-only JMAP).** 200 rounds of `Core/echo` per mode plus `/jmap/session` every 4th round, interleaved; `wrangler tail --format json` sampled 151 of ~900 requests. CPU in ms:
+
+| Probe | n | CPU median | p90 | max | over 10 ms | Wall median |
+|---|---|---|---|---|---|---|
+| `echo-jwt` | 66 | 3 | 4 | 5 | 0 | 75 ms |
+| `echo-basic` | 56 | 3 | 4 | 7 | 0 | 76 ms |
+| `session-jwt` | 12 | 4 | 5 | 5 | 0 | 92 ms |
+| `session-basic` | 17 | 3 | 5 | 5 | 0 | 100 ms |
+
+- JWT Bearer now costs the same as Basic: down from 8 ms CPU / 163 ms wall with opaque tokens.
+- An opaque token now gets 401 on `/jmap/session`, as intended.
+- **New pressure point: the token endpoints.** One sign-in measured `oauth2/authorize` at 10 ms and `oauth2/token` at **29 ms** CPU (JWT signing plus Better Auth). This may include a cold start; it is a single sample. Each client refreshes about every 10 minutes, so token-endpoint CPU, not JMAP, is now the auth cost to watch on Free.
+
 How to check the effect in production: re-run the per-method probe (`?probe=` tagging + `wrangler tail --format json`) before and after, comparing `echo-bearer` against `echo-basic` `cpuTime`/`wallTime`.
 
 ## Next steps (not decided)
