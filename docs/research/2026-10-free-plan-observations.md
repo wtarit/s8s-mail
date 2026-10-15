@@ -95,7 +95,17 @@ Where the Bearer path's extra time goes (local ms/request, inclusive, overlappin
 - Why not a custom opaque-token query (change 1): it would duplicate the provider's validation rules and drift from them, and it still costs a D1 round trip per check. A short-lived JWT makes the token check itself free; revocation is bounded by the 10-minute TTL plus the live `sid` session check.
 - The opaque path stays as a fallback for clients that send no `resource`. Change 3 (eager debug formatting) is untouched.
 
-How to check the effect: re-run the per-method probe (`?probe=` tagging + `wrangler tail --format json`) before and after, comparing `echo-bearer` against `echo-basic` `cpuTime`/`wallTime`.
+**Local re-measurement after the change** (same method: 300 × `Core/echo` per mode, warm isolate, busy JS ms/request):
+
+| Mode | Before | After |
+|---|---|---|
+| Basic (app password) | 7.8 | 7.5 |
+| Bearer, opaque token | 19.2 | 18.4 |
+| **Bearer, JWT** (`resource=<origin>/jmap`) | — | **8.2** |
+
+JWT Bearer now costs about the same as Basic locally (within ~0.7 ms). Production confirmation is still pending.
+
+How to check the effect in production: re-run the per-method probe (`?probe=` tagging + `wrangler tail --format json`) before and after, comparing `echo-bearer` against `echo-basic` `cpuTime`/`wallTime`.
 
 ## Next steps (not decided)
 
