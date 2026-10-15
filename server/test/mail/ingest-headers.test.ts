@@ -7,7 +7,7 @@ import {
   parseAddressList,
   parseDateHeader,
   parseMessageIds,
-} from "../src/mail/headers";
+} from "../../src/mail/headers";
 
 describe("decodeEncodedWords", () => {
   it("decodes UTF-8 base64 (Thai)", () => {

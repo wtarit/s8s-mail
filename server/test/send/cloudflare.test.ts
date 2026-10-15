@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { CloudflareProvider, SendError, getSendProvider, mapCloudflareError } from "../src/send";
+import { CloudflareProvider, SendError, getSendProvider, mapCloudflareError } from "../../src/send";
 
 const raw = new TextEncoder().encode("From: a@example.com\r\nTo: b@example.com\r\n\r\nhi\r\n");
 

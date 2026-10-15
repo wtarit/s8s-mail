@@ -1,10 +1,10 @@
 /* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { wellKnownJmap } from "../src/jmap";
+import { wellKnownJmap } from "../../src/jmap";
 import { Hono } from "hono";
-import { maxAttachmentBytes, getSendProvider } from "../src/send";
-import { call, setupAccount, type testApp, USING } from "./helpers/jmap";
+import { maxAttachmentBytes, getSendProvider } from "../../src/send";
+import { call, setupAccount, type testApp, USING } from "../helpers/jmap";
 
 describe("JMAP session", () => {
   it("advertises capabilities, limits and URLs", async () => {

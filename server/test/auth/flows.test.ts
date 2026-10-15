@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sendSystemMail } from "../src/send";
+import { sendSystemMail } from "../../src/send";
 import {
   acceptInvite,
   bootstrapAdmin,
@@ -9,9 +9,9 @@ import {
   resetDb,
   type Session,
   type Json,
-} from "./helpers";
+} from "../helpers";
 
-vi.mock("../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
+vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 const send = vi.mocked(sendSystemMail);
 
 async function newUser(admin: Session, address = "ana@example.com") {

@@ -1,10 +1,10 @@
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
-import { accountStub } from "../src/store/subscribe";
-import { newMessageBlobId, parseBlobId, partBlobId } from "../src/store/blob";
-import { normalizeMessageId, threadCandidates } from "../src/store/threading";
-import type { IngestInput } from "../src/store/types";
+import { accountStub } from "../../src/store/subscribe";
+import { newMessageBlobId, parseBlobId, partBlobId } from "../../src/store/blob";
+import { normalizeMessageId, threadCandidates } from "../../src/store/threading";
+import type { IngestInput } from "../../src/store/types";
 
 export function ingestInput(
   accountId: string,
