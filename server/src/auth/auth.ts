@@ -9,7 +9,13 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, jwt, magicLink } from "better-auth/plugins";
 import { getDb, schema } from "../db";
-import { APP_PASSWORD_PREFIX, AUTH_BASE_PATH, OAUTH_SCOPES, publicOrigin } from "./config";
+import {
+  APP_PASSWORD_PREFIX,
+  AUTH_BASE_PATH,
+  OAUTH_SCOPES,
+  jmapResource,
+  publicOrigin,
+} from "./config";
 import { inviteSession } from "./invite-session-plugin";
 import { runInBackground } from "./request-context";
 import { sendSystemMailLazy } from "./system-mail";
@@ -137,6 +143,12 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
         scopes: [...OAUTH_SCOPES],
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
+        // Clients that send `resource=<origin>/jmap` get a JWT access token (aud = that resource)
+        // that JMAP verifies locally; without it the token is opaque (slow D1 path). Seeded
+        // insert-only: edit the row (or `ensureBulwarkClient`) to change it later. Clients must be
+        // linked to the resource (`oauth_client_resource`); `ensureBulwarkClient` does that for the
+        // webmail client.
+        resources: [jmapResource(env)],
         // Only admins manage OAuth clients; our /api/admin routes enforce this too.
         clientPrivileges: ({ user }) => user?.role === "admin",
       }),

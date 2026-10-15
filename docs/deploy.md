@@ -65,7 +65,7 @@ Workers Static Assets quirks (Lite's `_redirects` targets Netlify/Pages):
 - Rewrite targets ending in `/index.html` loop, because assets strip `index.html` from URLs. Rewrite `/x/mail/*  /x/mail/index.html  200` to `/x/mail/*  /x/mail/  200`.
 - At most **100 dynamic redirect rules**. 27 locales × 5 surfaces exceeds it, so build with `LITE_LOCALES`.
 
-Deploy as an assets-only Worker with `"assets": { "directory": "<out>", "not_found_handling": "404-page" }` and a custom-domain route for `webmail.example.com`. The Bulwark OAuth client (`bulwark-lite`, redirect `${WEBMAIL_ORIGIN}/oauth/callback`, trusted, PKCE) is created by bootstrap.
+Deploy as an assets-only Worker with `"assets": { "directory": "<out>", "not_found_handling": "404-page" }` and a custom-domain route for `webmail.example.com`. The Bulwark OAuth client (`bulwark-lite`, redirect `${WEBMAIL_ORIGIN}/oauth/callback`, trusted, PKCE) is created by bootstrap, together with the JMAP OAuth resource (`${PUBLIC_URL origin}/jmap`) it must be linked to so that the webmail gets JWT access tokens. On an existing deployment, call `POST /api/admin/oauth-clients/ensure-defaults` (as an admin) once after deploying this change, before the webmail starts sending `resource` (an unlinked client gets `invalid_target`).
 
 ## Notes
 

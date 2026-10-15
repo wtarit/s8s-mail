@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { getDb, schema, type Db } from "../db";
-import { AUTH_BASE_PATH, publicOrigin } from "./config";
+import { AUTH_BASE_PATH, jmapResourceIdentifier, publicOrigin } from "./config";
 import { getAuth } from "./index";
 import { runInBackground } from "./request-context";
 import type { AppEnv, Principal } from "./types";
@@ -85,25 +85,128 @@ async function userIdFromOpaqueToken(env: Env, db: Db, token: string): Promise<s
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// JWT access tokens. Better Auth signs them; this path only verifies, locally, with two small
+// per-isolate caches. It must not import or initialise Better Auth (that is the point: the opaque
+// path costs ~8 ms CPU on Workers Free, mostly D1 reads through Better Auth's adapter).
+// ---------------------------------------------------------------------------------------------
+
+/** Never reload the signing keys more often than this because of an unknown `kid`. */
+const JWKS_MIN_RELOAD_MS = 30 * 1000;
+/** Reload the key set at least this often, so a deleted key stops verifying. */
+const JWKS_MAX_AGE_MS = 10 * 60 * 1000;
+/** Better Auth's jwt() default: a key keeps verifying this long after its `expires_at`. */
+const JWKS_GRACE_MS = 30 * 24 * 60 * 60 * 1000;
+const TRUSTED_CLIENT_TTL_MS = 60 * 1000;
+
+interface SigningKey {
+  key: CryptoKey | Uint8Array;
+  /** Verification stops after this instant (null: never expires). */
+  notAfter: number | null;
+}
+interface KeySet {
+  loadedAt: number;
+  keys: Map<string, SigningKey>;
+}
+
+let keySet: KeySet | null = null;
+let keySetLoad: Promise<KeySet> | null = null;
+const trustedClients = new Map<string, { trusted: boolean; until: number }>();
+
+/** Drops the per-isolate JWT caches. For tests. */
+export function resetJmapAuthCaches(): void {
+  keySet = null;
+  keySetLoad = null;
+  trustedClients.clear();
+}
+
+/** Reads the public signing keys (public JWK only, never the private key) from the jwks table. */
+async function loadKeySet(db: Db): Promise<KeySet> {
+  const { importJWK } = await import("jose");
+  const rows = await db
+    .select({
+      id: schema.jwks.id,
+      publicKey: schema.jwks.publicKey,
+      alg: schema.jwks.alg,
+      expiresAt: schema.jwks.expiresAt,
+    })
+    .from(schema.jwks);
+  const keys = new Map<string, SigningKey>();
+  for (const row of rows) {
+    if ((row.alg ?? "EdDSA") !== "EdDSA") continue;
+    try {
+      // The stored public key is the bare JWK JSON ({kty, crv, x}); the id is the JWT `kid`.
+      const key = await importJWK(JSON.parse(row.publicKey), "EdDSA");
+      keys.set(row.id, {
+        key,
+        notAfter: row.expiresAt ? row.expiresAt.getTime() + JWKS_GRACE_MS : null,
+      });
+    } catch {
+      // skip a malformed row
+    }
+  }
+  return { loadedAt: Date.now(), keys };
+}
+
+function reloadKeySet(db: Db): Promise<KeySet> {
+  keySetLoad ??= loadKeySet(db)
+    .then((loaded) => {
+      // An empty set is not cached: the first login mints the first key (no tokens exist before).
+      keySet = loaded.keys.size ? loaded : null;
+      return loaded;
+    })
+    .finally(() => {
+      keySetLoad = null;
+    });
+  return keySetLoad;
+}
+
+/** The verification key for a `kid`; reloads the set once if it is unknown (key rotation). */
+async function signingKeyFor(db: Db, kid: string): Promise<SigningKey | undefined> {
+  const now = Date.now();
+  let current = keySet;
+  if (!current || now - current.loadedAt >= JWKS_MAX_AGE_MS) current = await reloadKeySet(db);
+  else if (!current.keys.has(kid) && now - current.loadedAt >= JWKS_MIN_RELOAD_MS)
+    current = await reloadKeySet(db);
+  const found = current.keys.get(kid);
+  return found && (found.notAfter === null || found.notAfter > Date.now()) ? found : undefined;
+}
+
+/** `isTrustedClient`, cached per isolate for a minute (revoking trust takes up to that long). */
+async function isTrustedClientCached(db: Db, clientId: string): Promise<boolean> {
+  const hit = trustedClients.get(clientId);
+  if (hit && hit.until > Date.now()) return hit.trusted;
+  const trusted = await isTrustedClient(db, clientId);
+  trustedClients.set(clientId, { trusted, until: Date.now() + TRUSTED_CLIENT_TTL_MS });
+  return trusted;
+}
+
 /** JWT access token (issued when a client requests `resource=<origin>/jmap`). */
 async function userIdFromJwt(env: Env, db: Db, token: string): Promise<string | null> {
-  const auth = await getAuth(env);
   const origin = publicOrigin(env);
-  // Signing keys come straight from the jwks table (in-process), never from an HTTP self-fetch.
-  const { jwtVerify, createLocalJWKSet } = await import("jose");
-  const jwks = await auth.api.getJwks();
+  const { jwtVerify, decodeProtectedHeader } = await import("jose");
+  let kid: string | undefined;
+  try {
+    const header = decodeProtectedHeader(token);
+    if (header.alg === "EdDSA") kid = header.kid;
+  } catch {
+    return null;
+  }
+  if (typeof kid !== "string") return null;
+  const signing = await signingKeyFor(db, kid);
+  if (!signing) return null;
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, createLocalJWKSet(jwks), {
+    ({ payload } = await jwtVerify(token, signing.key, {
       issuer: `${origin}${AUTH_BASE_PATH}`,
-      audience: `${origin}/jmap`,
+      audience: jmapResourceIdentifier(env),
       algorithms: ["EdDSA"],
     }));
   } catch {
     return null;
   }
   const clientId = typeof payload.azp === "string" ? payload.azp : undefined;
-  if (!payload.sub || !clientId || !(await isTrustedClient(db, clientId))) return null;
+  if (!payload.sub || !clientId || !(await isTrustedClientCached(db, clientId))) return null;
   if (typeof payload.sid === "string") {
     const session = await db
       .select({ expiresAt: schema.session.expiresAt })

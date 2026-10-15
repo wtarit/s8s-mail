@@ -85,9 +85,15 @@ Where the Bearer path's extra time goes (local ms/request, inclusive, overlappin
 **Smallest changes the evidence supports (not implemented):**
 1. **Validate opaque tokens without `oauth2UserInfo`.** One D1 query joining `oauth_access_token` → `oauth_client` (trusted, enabled) → `user` (not banned), checking `accessTokenExpiresAt`, replaces ~6 queries and the whole Better Auth adapter path.
    - Expected: Bearer ≈ Basic, ~2.5–3 ms CPU and ~60 ms wall in production.
-   - Must replicate the provider's checks: expiry, revocation (row deleted), client disabled, and the session still alive if tokens are session-bound.
+   - Must replicate the provider's checks: expiry, revocation (the `revoked` flag on the token row, not a deleted row), client disabled, and the session still alive if tokens are session-bound.
 2. **Short per-isolate cache** (30–60 s) of `sha256(token)` → principal. Bulwark sends bursts, so most requests would skip auth D1 entirely. Trade-off: revocation takes up to the TTL to apply.
 3. **Eager debug formatting in Better Auth's adapter** costs every Better Auth DB operation (sign-in, get-session, …), roughly 1 ms production per operation. Options: a small `pnpm patch` guarding the template literals behind the debug flag, and/or an upstream issue.
+
+**Outcome (decided):** JMAP access tokens became **JWTs** instead of implementing changes 1 and 2 for opaque tokens.
+- Better Auth stays the only issuer and signer. `oauthProvider` registers the resource `<origin>/jmap` (10-minute access tokens), and the webmail client sends `resource=` so it gets JWTs.
+- `jmapAuth` verifies the signature locally against the `jwks` table (cached per isolate) and no longer imports Better Auth on that path. The per-request cost is the session, user and account reads (3 D1 queries), the same as Basic, instead of ~7 reads through Better Auth's adapter.
+- Why not a custom opaque-token query (change 1): it would duplicate the provider's validation rules and drift from them, and it still costs a D1 round trip per check. A short-lived JWT makes the token check itself free; revocation is bounded by the 10-minute TTL plus the live `sid` session check.
+- The opaque path stays as a fallback for clients that send no `resource`. Change 3 (eager debug formatting) is untouched.
 
 How to check the effect: re-run the per-method probe (`?probe=` tagging + `wrangler tail --format json`) before and after, comparing `echo-bearer` against `echo-basic` `cpuTime`/`wallTime`.
 
