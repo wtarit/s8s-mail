@@ -1,15 +1,26 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { runDurableObjectAlarm, runInDurableObject } from "cloudflare:test";
-import { describe, expect, it, vi } from "vitest";
-import { accountStub } from "../../src/store/subscribe";
+import { describe, expect, it } from "vitest";
 import { MAX_PARSE_ATTEMPTS } from "../../src/store/account-do";
-import { buildRaw, seedAccount } from "../helpers/mail";
-import { emails, deliver } from "../helpers/ingest";
+import { accountStub } from "../../src/store/subscribe";
+import { setupAccount } from "../helpers/jmap";
+import { buildRaw } from "../helpers/mail";
+import {
+  deliver,
+  downloadText,
+  getEmails,
+  r2Keys,
+  searchIds,
+  settleParse,
+} from "../helpers/ingest";
+
+const BODY_PROPS = ["preview", "hasAttachment", "bodyStructure", "textBody", "attachments"];
+const BODY_VALUES = { fetchTextBodyValues: true, fetchHTMLBodyValues: true };
 
 describe("deferred body parse (alarm)", () => {
-  it("parses preview, attachment flag, body structure, part blobs and FTS", async () => {
-    await seedAccount("ing-parse", ["parse@example.com"]);
-    const stub = accountStub(env, "ing-parse");
+  it("parses preview, attachments, bodies and search text", async () => {
+    const { app, accountId } = await setupAccount("ing-parse", ["parse@example.com"]);
     await deliver(
       "parse@example.com",
       buildRaw({
@@ -22,127 +33,92 @@ describe("deferred body parse (alarm)", () => {
         },
       }),
     );
-    // The scheduled alarm may also fire on its own in the test runtime; run it explicitly
-    // until the message is parsed.
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(stub);
-      expect((await emails("ing-parse"))[0]!.parse_state).toBe("parsed");
-    });
+    await settleParse(accountId);
 
-    const [row] = await emails("ing-parse");
-    expect(row).toMatchObject({ parse_state: "parsed", has_attachment: 1, parse_attempts: 1 });
-    expect(row!.preview).toBe("The zebrafish results are attached. Regards");
-    expect(row!.preview.length).toBeLessThanOrEqual(256);
-
-    const structure = JSON.parse(row!.body_structure!);
-    expect(structure.type).toBe("multipart/mixed");
-    const attachment = structure.subParts.at(-1);
-    expect(attachment).toMatchObject({
-      partId: "3",
-      name: "report.txt",
-      disposition: "attachment",
-    });
-    expect(attachment.blobId).toBe(`${row!.blob_id}-3`);
-    // Decoded part blobs were materialized next to the raw message.
-    const part = await env.BLOBS.get(`ing-parse/${attachment.blobId}`);
-    expect(await part!.text()).toBe("attachment body");
-    expect(await (await env.BLOBS.get(`ing-parse/${row!.blob_id}-1`))!.text()).toContain(
-      "zebrafish",
+    const [email] = await getEmails(app, accountId, [...BODY_PROPS, "bodyValues"], BODY_VALUES);
+    expect(email!.preview).toBe("The zebrafish results are attached. Regards");
+    expect(email!.hasAttachment).toBe(true);
+    expect(email!.bodyStructure.type).toBe("multipart/mixed");
+    expect(email!.attachments).toMatchObject([
+      { name: "report.txt", type: "text/plain", disposition: "attachment" },
+    ]);
+    const textPart = email!.textBody[0];
+    expect(email!.bodyValues[textPart.partId].value).toContain("zebrafish");
+    // Attachment content is downloadable, decoded.
+    expect(await downloadText(app, accountId, email!.attachments[0].blobId, "report.txt")).toBe(
+      "attachment body",
     );
 
-    // FTS hit on body and on subject; miss otherwise.
-    const hits = (term: string) =>
-      runInDurableObject(stub, (_i, state) =>
-        state.storage.sql
-          .exec<{ id: string }>(
-            "SELECT e.id FROM email_fts f JOIN email e ON e.rowid = f.rowid WHERE email_fts MATCH ?",
-            term,
-          )
-          .toArray()
-          .map((r) => r.id),
-      );
-    expect(await hits("zebrafish")).toEqual([row!.id]);
-    expect(await hits("subject:quarterly")).toEqual([row!.id]);
-    expect(await hits("nonexistentterm")).toEqual([]);
+    // Search finds the body and the subject; a term that is nowhere finds nothing.
+    expect(await searchIds(app, accountId, { text: "zebrafish" })).toEqual([email!.id]);
+    expect(await searchIds(app, accountId, { subject: "quarterly" })).toEqual([email!.id]);
+    expect(await searchIds(app, accountId, { text: "nonexistentterm" })).toEqual([]);
   });
 
-  it("derives preview and FTS text from an HTML-only message", async () => {
-    await seedAccount("ing-html", ["html@example.com"]);
+  it("derives preview and search text from an HTML-only message", async () => {
+    const { app, accountId } = await setupAccount("ing-html", ["html@example.com"]);
     const raw = buildRaw().replace(
       "Content-Type: text/plain; charset=utf-8\r\n\r\nHello Ana,\r\nthis is the body.",
-      "Content-Type: text/html; charset=utf-8\r\n\r\n<p>Hello <b>Ana</b></p>",
+      "Content-Type: text/html; charset=utf-8\r\n\r\n<p>Hello <b>Ana</b> and zucchini</p>",
     );
     await deliver("html@example.com", raw);
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(accountStub(env, "ing-html"));
-      expect((await emails("ing-html"))[0]!.parse_state).toBe("parsed");
+    await settleParse(accountId);
+
+    const [email] = await getEmails(app, accountId, BODY_PROPS);
+    expect(email!.preview).toBe("Hello Ana and zucchini");
+    expect(email!.hasAttachment).toBe(false);
+    expect(email!.bodyStructure).toMatchObject({ type: "text/html" });
+    // textBody falls back to the HTML part (RFC 8621 §4.1.4)
+    expect(email!.textBody).toHaveLength(1);
+    expect(email!.textBody[0]).toMatchObject({
+      type: "text/html",
+      partId: email!.bodyStructure.partId,
     });
-    const [row] = await emails("ing-html");
-    expect(row!.preview).toBe("Hello Ana");
-    expect(row!.has_attachment).toBe(0);
-    const structure = JSON.parse(row!.body_structure!);
-    expect(structure).toMatchObject({ partId: "2", type: "text/html" });
-    const textBody = JSON.parse(
-      await runInDurableObject(
-        accountStub(env, "ing-html"),
-        (_i, state) =>
-          state.storage.sql.exec<{ t: string }>("SELECT text_body AS t FROM email").one().t,
-      ),
-    );
-    expect(textBody).toEqual([structure]); // textBody falls back to the HTML part
+    expect(await searchIds(app, accountId, { text: "zucchini" })).toEqual([email!.id]);
   });
 
   it("caps the preview at 256 characters", async () => {
-    await seedAccount("ing-preview", ["preview@example.com"]);
+    const { app, accountId } = await setupAccount("ing-preview", ["preview@example.com"]);
     await deliver("preview@example.com", buildRaw({ text: "word ".repeat(200) }));
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(accountStub(env, "ing-preview"));
-      expect((await emails("ing-preview"))[0]!.parse_state).toBe("parsed");
-    });
-    const [row] = await emails("ing-preview");
-    expect(row!.preview).toHaveLength(256);
+    await settleParse(accountId);
+    const [email] = await getEmails(app, accountId, ["preview"]);
+    expect(email!.preview).toHaveLength(256);
   });
 
   it("parses all pending messages, rescheduling the alarm between them", async () => {
-    await seedAccount("ing-many", ["many@example.com"]);
-    const stub = accountStub(env, "ing-many");
-    await deliver("many@example.com", buildRaw({ messageId: "<a@example.com>" }));
-    await deliver("many@example.com", buildRaw({ messageId: "<b@example.com>" }));
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(stub);
-      expect((await emails("ing-many")).map((r) => r.parse_state)).toEqual(["parsed", "parsed"]);
-    });
+    const { app, accountId } = await setupAccount("ing-many", ["many@example.com"]);
+    await deliver("many@example.com", buildRaw({ messageId: "<a@example.com>", text: "alpha" }));
+    await deliver("many@example.com", buildRaw({ messageId: "<b@example.com>", text: "bravo" }));
+    await settleParse(accountId);
+    const emails = await getEmails(app, accountId, ["preview"]);
+    expect(emails.map((e) => e.preview).toSorted()).toEqual(["alpha", "bravo"]);
   });
 
-  it("counts attempts and ends `failed` when the parse keeps failing", async () => {
-    await seedAccount("ing-bad", ["bad@example.com"]);
-    const stub = accountStub(env, "ing-bad");
+  it("keeps serving headers and stops retrying when the parse keeps failing", async () => {
+    const { app, accountId } = await setupAccount("ing-bad", ["bad@example.com"]);
     await deliver("bad@example.com", buildRaw());
-    const [row] = await emails("ing-bad");
-    await env.BLOBS.delete(`ing-bad/${row!.blob_id}`); // the raw message disappears
+    // Fault injection: the raw message disappears from R2 before the parse runs.
+    for (const key of await r2Keys(accountId)) await env.BLOBS.delete(key);
 
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(stub);
-      expect((await emails("ing-bad"))[0]!.parse_state).toBe("failed");
-    });
-    const [failed] = await emails("ing-bad");
-    expect(failed).toMatchObject({ parse_attempts: MAX_PARSE_ATTEMPTS });
-    expect(failed!.parse_error).toMatch(/missing/);
-    // Header data is still served for a failed message.
-    expect(failed!.subject).toBe("Hello");
+    await settleParse(accountId);
+    const [email] = await getEmails(app, accountId, ["subject", "preview", "from"]);
+    expect(email).toMatchObject({ subject: "Hello", preview: "" });
+    expect(email!.from).toEqual([{ name: "Bob", email: "bob@example.com" }]);
+    // Given up: no further alarm is scheduled.
+    expect(await runDurableObjectAlarm(accountStub(env, accountId))).toBe(false);
   });
 
-  it("marks a message failed when attempts were exhausted by killed invocations", async () => {
-    await seedAccount("ing-killed", ["killed@example.com"]);
-    const stub = accountStub(env, "ing-killed");
+  it("gives up on a message whose attempts were used up by killed invocations", async () => {
+    const { app, accountId } = await setupAccount("ing-killed", ["killed@example.com"]);
     await deliver("killed@example.com", buildRaw());
-    // Simulate three invocations killed for CPU: the counter was persisted, nothing else.
-    await runInDurableObject(stub, (_i, state) => {
+    // Fault injection: three invocations killed for CPU; the counter was persisted, nothing else.
+    await runInDurableObject(accountStub(env, accountId), (_i, state) => {
       state.storage.sql.exec("UPDATE email SET parse_attempts = ?", MAX_PARSE_ATTEMPTS);
     });
-    await vi.waitFor(async () => {
-      await runDurableObjectAlarm(stub);
-      expect((await emails("ing-killed"))[0]!.parse_state).toBe("failed");
-    });
+    await settleParse(accountId);
+    // The raw message is intact, but it is not parsed again: only headers are served.
+    const [email] = await getEmails(app, accountId, ["subject", "preview"]);
+    expect(email).toMatchObject({ subject: "Hello", preview: "" });
+    expect(await runDurableObjectAlarm(accountStub(env, accountId))).toBe(false);
   });
 });

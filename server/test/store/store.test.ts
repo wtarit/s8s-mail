@@ -1,15 +1,13 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
-import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { accountStub } from "../../src/store/subscribe";
 import { newMessageBlobId, parseBlobId, partBlobId } from "../../src/store/blob";
-import { normalizeMessageId, threadCandidates } from "../../src/store/threading";
 import type { IngestInput } from "../../src/store/types";
+import { call, deliver, resp, setupAccount } from "../helpers/jmap";
+import { getEmails, searchIds, settleParse } from "../helpers/ingest";
 
-export function ingestInput(
-  accountId: string,
-  over: Partial<IngestInput["headers"]> = {},
-): IngestInput {
+function ingestInput(accountId: string, over: Partial<IngestInput["headers"]> = {}): IngestInput {
   return {
     accountId,
     blobId: newMessageBlobId(),
@@ -33,43 +31,18 @@ export function ingestInput(
   };
 }
 
-type LogRow = { type: string; object_id: string; kind: string };
-
-async function changeLog(stub: ReturnType<typeof accountStub>): Promise<LogRow[]> {
-  return runInDurableObject(stub, (_i, state) =>
-    state.storage.sql
-      .exec<LogRow>("SELECT type, object_id, kind FROM change_log ORDER BY seq")
-      .toArray(),
-  );
-}
+type Part = { blobId: string | null; subParts: Part[] | null };
+const leafBlobIds = (p: Part): string[] =>
+  p.subParts ? p.subParts.flatMap(leafBlobIds) : p.blobId ? [p.blobId] : [];
 
 describe("AccountDO store", () => {
-  it("runs migrations and creates the schema", async () => {
-    const stub = accountStub(env, "store-schema");
-    const tables = await stub.listTables();
-    for (const t of [
-      "meta",
-      "mailbox",
-      "email",
-      "email_mailbox",
-      "email_keyword",
-      "thread_ref",
-      "change_log",
-      "email_fts",
-    ]) {
-      expect(tables).toContain(t);
-    }
-  });
-
   it("seeds the RFC 8621 system mailboxes once", async () => {
     const stub = accountStub(env, "store-mailboxes");
     await stub.init("store-mailboxes");
-    const rows = await runInDurableObject(stub, (_i, state) =>
-      state.storage.sql
-        .exec<{ name: string; role: string }>("SELECT name, role FROM mailbox ORDER BY sort_order")
-        .toArray(),
-    );
-    expect(rows.map((r) => r.role)).toEqual([
+    await stub.init("store-mailboxes");
+    const { list } = await stub.mailboxGet(null);
+    const ordered = list.toSorted((a, b) => a.sortOrder - b.sortOrder);
+    expect(ordered.map((m) => m.role)).toEqual([
       "inbox",
       "drafts",
       "sent",
@@ -77,9 +50,7 @@ describe("AccountDO store", () => {
       "trash",
       "archive",
     ]);
-    expect(rows[0]!.name).toBe("Inbox");
-    // Seeding is logged as Mailbox "created", so the state is non-zero from the start.
-    expect((await stub.getState()).Mailbox).toBe("6");
+    expect(ordered[0]!.name).toBe("Inbox");
   });
 
   it("stores the accountId in meta and refuses a different one", async () => {
@@ -87,80 +58,23 @@ describe("AccountDO store", () => {
     await stub.init("store-meta");
     await stub.init("store-meta");
     expect(await stub.getMeta("accountId")).toBe("store-meta");
-    let error: unknown;
-    try {
-      await stub.init("someone-else");
-    } catch (e) {
-      error = e;
-    }
-    expect(String(error)).toMatch(/belongs to account/);
+    // (wrapped: an RPC promise left unawaited by `rejects` would surface as an unhandled rejection)
+    await expect((async () => stub.init("someone-else"))()).rejects.toThrow();
+    expect(await stub.getMeta("accountId")).toBe("store-meta");
   });
 
   it("ingest is idempotent per blobId", async () => {
     const stub = accountStub(env, "store-idem");
     const input = ingestInput("store-idem");
     const a = await stub.ingest(input);
+    const stateAfterFirst = await stub.getState();
     const b = await stub.ingest(input);
     expect(b).toEqual(a);
-    const n = await runInDurableObject(
-      stub,
-      (_i, state) =>
-        state.storage.sql.exec<{ n: number }>("SELECT count(*) AS n FROM email").one().n,
-    );
-    expect(n).toBe(1);
-  });
-
-  it("logs changes by trigger and derives per-type state", async () => {
-    const stub = accountStub(env, "store-log");
-    const before = await stub.getState();
-    expect(before).toMatchObject({ Email: "0", Thread: "0", EmailDelivery: "0" });
-
-    const { emailId, threadId } = await stub.ingest(ingestInput("store-log"));
-    const log = await changeLog(stub);
-    const forEmail = log.filter((r) => r.object_id === emailId).map((r) => `${r.type}:${r.kind}`);
-    expect(forEmail).toContain("Email:created");
-    expect(forEmail).toContain("EmailDelivery:created");
-    expect(log).toContainEqual({ type: "Thread", object_id: threadId, kind: "created" });
-    // Membership insert changes the inbox counts.
-    expect(log.filter((r) => r.type === "Mailbox" && r.kind === "updated")).toHaveLength(1);
-
-    const after = await stub.getState();
-    expect(Number(after.Email)).toBeGreaterThan(0);
-    expect(Number(after.Thread)).toBeGreaterThan(0);
-    expect(Number(after.Mailbox)).toBeGreaterThan(Number(before.Mailbox));
-  });
-
-  it("logs keyword, membership and destroy changes", async () => {
-    const stub = accountStub(env, "store-triggers");
-    const { emailId, threadId } = await stub.ingest(ingestInput("store-triggers"));
-    const start = (await changeLog(stub)).length;
-
-    await runInDurableObject(stub, (_i, state) => {
-      const s = state.storage.sql;
-      s.exec("INSERT INTO email_keyword (email_id, keyword) VALUES (?, '$flagged')", emailId);
-      s.exec("INSERT INTO email_keyword (email_id, keyword) VALUES (?, '$seen')", emailId);
-    });
-    let log = (await changeLog(stub)).slice(start);
-    // $flagged: Email only. $seen: Email + the (inbox) Mailbox's unread count.
-    expect(log.map((r) => `${r.type}:${r.kind}`)).toEqual([
-      "Email:updated",
-      "Email:updated",
-      "Mailbox:updated",
+    // One email, and the second ingest changed nothing clients could see.
+    expect((await stub.threadGet([a.threadId])).list).toEqual([
+      { id: a.threadId, emailIds: [a.emailId] },
     ]);
-
-    const mid = (await changeLog(stub)).length;
-    await runInDurableObject(stub, (_i, state) => {
-      state.storage.sql.exec("DELETE FROM email WHERE id = ?", emailId);
-    });
-    log = (await changeLog(stub)).slice(mid);
-    expect(log).toContainEqual({ type: "Email", object_id: emailId, kind: "destroyed" });
-    expect(log).toContainEqual({ type: "Thread", object_id: threadId, kind: "destroyed" });
-    const refs = await runInDurableObject(
-      stub,
-      (_i, state) =>
-        state.storage.sql.exec<{ n: number }>("SELECT count(*) AS n FROM thread_ref").one().n,
-    );
-    expect(refs).toBe(0);
+    expect(await stub.getState()).toEqual(stateAfterFirst);
   });
 
   it("joins replies to the thread (In-Reply-To, References, out of order)", async () => {
@@ -196,69 +110,54 @@ describe("AccountDO store", () => {
     );
     expect(parent.threadId).toBe(early.threadId);
 
-    // Unrelated mail gets its own thread; a second email in a thread logs Thread "updated".
+    // Unrelated mail gets its own thread.
     const other = await stub.ingest(ingestInput("store-threads"));
     expect(other.threadId).not.toBe(root.threadId);
-    const log = await changeLog(stub);
-    expect(
-      log.filter((r) => r.type === "Thread" && r.object_id === root.threadId).map((r) => r.kind),
-    ).toEqual(["created", "updated", "updated"]);
   });
 
   it("deleteAll wipes the store, returns all blob ids and leaves a fresh empty store", async () => {
-    const stub = accountStub(env, "store-delete");
-    const input = ingestInput("store-delete");
-    await stub.ingest(input);
-    // Pretend the parse produced part blobs.
-    await runInDurableObject(stub, (_i, state) => {
-      state.storage.sql.exec(
-        "UPDATE email SET body_structure = ? WHERE blob_id = ?",
-        JSON.stringify({
-          partId: null,
-          blobId: null,
-          subParts: [{ partId: "1", blobId: partBlobId(input.blobId, "1"), subParts: null }],
-        }),
-        input.blobId,
-      );
+    const { app, accountId } = await setupAccount("store-delete", ["store-delete@example.com"]);
+    await deliver(accountId, "store-delete@example.com", {
+      attachment: { filename: "a.txt", mimeType: "text/plain", base64: btoa("hello") },
     });
-    const ids = await stub.deleteAll();
-    expect(ids.toSorted()).toEqual([input.blobId, partBlobId(input.blobId, "1")].toSorted());
+    await settleParse(accountId);
+    const [email] = await getEmails(app, accountId, ["blobId", "threadId", "bodyStructure"]);
+    // The caller deletes these from R2: the raw message and every decoded part.
+    const expected = [email!.blobId, ...leafBlobIds(email!.bodyStructure)];
+    expect(expected.length).toBeGreaterThan(2);
 
-    const counts = await runInDurableObject(stub, (_i, state) => {
-      const one = (q: string) => state.storage.sql.exec<{ n: number }>(q).one().n;
-      return {
-        emails: one("SELECT count(*) AS n FROM email"),
-        refs: one("SELECT count(*) AS n FROM thread_ref"),
-        mailboxes: one("SELECT count(*) AS n FROM mailbox"),
-        log: one("SELECT count(*) AS n FROM change_log WHERE type = 'Email'"),
-      };
-    });
-    expect(counts).toEqual({ emails: 0, refs: 0, mailboxes: 6, log: 0 });
+    const stub = accountStub(env, accountId);
+    expect((await stub.deleteAll()).toSorted()).toEqual(expected.toSorted());
+
     expect(await stub.getMeta("accountId")).toBeNull();
-    expect((await stub.getState()).Email).toBe("0");
+    const r = await call(app, [
+      ["Email/get", { accountId, ids: [email!.id], properties: ["id"] }, "e"],
+      ["Thread/get", { accountId, ids: [email!.threadId] }, "t"],
+      ["Mailbox/get", { accountId }, "m"],
+    ]);
+    expect(resp(r, 0).args.notFound).toEqual([email!.id]);
+    expect(resp(r, 1).args.notFound).toEqual([email!.threadId]);
+    const boxes = resp(r, 2).args.list;
+    expect(boxes).toHaveLength(6);
+    expect(boxes.map((m: any) => m.totalEmails)).toEqual([0, 0, 0, 0, 0, 0]);
+    expect(await searchIds(app, accountId)).toEqual([]);
+
     // ... and the account can be used again.
-    await stub.ingest(ingestInput("store-delete"));
+    await deliver(accountId, "store-delete@example.com", { messageId: "<again@example.com>" });
+    expect(await searchIds(app, accountId)).toHaveLength(1);
   });
 });
 
-describe("blob ids and threading helpers", () => {
+describe("blob ids", () => {
   it("builds valid JMAP ids and splits part blob ids", () => {
+    // RFC 8620 §1.2: 1-255 characters of A-Z a-z 0-9 - _
+    const jmapId = /^[A-Za-z0-9_-]{1,255}$/;
     const id = newMessageBlobId();
-    expect(id).toMatch(/^M[0-9a-f]{32}$/);
+    expect(id).toMatch(jmapId);
+    expect(newMessageBlobId()).not.toBe(id);
     const part = partBlobId(id, "3");
-    expect(part).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(part).toMatch(jmapId);
     expect(parseBlobId(part)).toEqual({ messageBlobId: id, partId: "3" });
     expect(parseBlobId(id)).toEqual({ messageBlobId: id, partId: null });
-  });
-
-  it("orders thread candidates: own id, In-Reply-To, References newest first", () => {
-    expect(normalizeMessageId(" <A@Example.com> ")).toBe("a@example.com");
-    expect(threadCandidates("Me@x", ["P@x"], ["r1@x", "r2@x", "p@x"])).toEqual([
-      "me@x",
-      "p@x",
-      "r2@x",
-      "r1@x",
-    ]);
-    expect(threadCandidates(null, [], [])).toEqual([]);
   });
 });

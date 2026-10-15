@@ -124,17 +124,6 @@ export class AccountDO extends DurableObject<Env> implements AccountStore {
     return this.db.select().from(meta).where(eq(meta.key, key)).get()?.value ?? null;
   }
 
-  /** RPC: names of the user tables (excludes SQLite, Cloudflare and drizzle internals). */
-  listTables(): string[] {
-    return this.ctx.storage.sql
-      .exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .toArray()
-      .map((r) => r.name)
-      .filter(
-        (n) => !n.startsWith("sqlite_") && !n.startsWith("_cf_") && !n.startsWith("__drizzle"),
-      );
-  }
-
   // ---------------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------------

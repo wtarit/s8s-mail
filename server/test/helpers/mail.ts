@@ -1,14 +1,8 @@
 import { env } from "cloudflare:workers";
 import { vi } from "vitest";
 
-/** Applies the (stable) D1 directory tables and seeds one account with its addresses. */
+/** Seeds one account (D1 migrations are applied by helpers/setup.ts) with its addresses. */
 export async function seedAccount(accountId: string, addresses: string[]): Promise<void> {
-  const ddl = [
-    "CREATE TABLE IF NOT EXISTS domain (name text PRIMARY KEY NOT NULL, catch_all_address text, created_at integer NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS mail_account (id text PRIMARY KEY NOT NULL, name text NOT NULL, is_personal integer DEFAULT true NOT NULL, owner_user_id text, created_at integer NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS address (address text PRIMARY KEY NOT NULL, local_part text NOT NULL, domain text NOT NULL REFERENCES domain(name), account_id text NOT NULL REFERENCES mail_account(id) ON DELETE CASCADE, kind text NOT NULL, created_at integer NOT NULL)",
-  ];
-  for (const stmt of ddl) await env.DB.prepare(stmt).run();
   const now = Date.now();
   await env.DB.prepare("INSERT OR IGNORE INTO mail_account (id, name, created_at) VALUES (?, ?, ?)")
     .bind(accountId, accountId, now)

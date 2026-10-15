@@ -2,14 +2,15 @@ import { env } from "cloudflare:workers";
 import { runDurableObjectAlarm } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
 import { accountStub, subscribeToAccount } from "../../src/store/subscribe";
-import { buildRaw, seedAccount } from "../helpers/mail";
-import { deliver } from "../helpers/ingest";
+import { setupAccount } from "../helpers/jmap";
+import { buildRaw } from "../helpers/mail";
+import { deliver, stateOf } from "../helpers/ingest";
 
 describe("push", () => {
   it("sends a StateChange to WebSocket subscribers after ingest and after parse", async () => {
-    await seedAccount("ing-push", ["push@example.com"]);
-    const stub = accountStub(env, "ing-push");
-    const ws = await subscribeToAccount(env, "ing-push");
+    const { app, accountId } = await setupAccount("ing-push", ["push@example.com"]);
+    const stub = accountStub(env, accountId);
+    const ws = await subscribeToAccount(env, accountId);
     const received: unknown[] = [];
     ws.addEventListener("message", (e) => received.push(JSON.parse(e.data as string)));
 
@@ -25,17 +26,20 @@ describe("push", () => {
     type Msg = { "@type": string; changed: Record<string, Record<string, string>> };
     const [first, second] = received as [Msg, Msg];
     expect(first["@type"]).toBe("StateChange");
-    expect(Object.keys(first.changed)).toEqual(["ing-push"]);
-    expect(Object.keys(first.changed["ing-push"]!).toSorted()).toEqual([
+    expect(Object.keys(first.changed)).toEqual([accountId]);
+    expect(Object.keys(first.changed[accountId]!).toSorted()).toEqual([
       "Email",
       "EmailDelivery",
       "Mailbox",
       "Thread",
     ]);
-    expect(Number(second.changed["ing-push"]!.Email)).toBeGreaterThan(
-      Number(first.changed["ing-push"]!.Email),
-    );
-    expect(second.changed["ing-push"]).toEqual(await stub.getState());
+    // The parse changes the email (preview, ...), not the delivery.
+    expect(second.changed[accountId]!.Email).not.toBe(first.changed[accountId]!.Email);
+    // The pushed states are the ones JMAP reports.
+    const pushed = second.changed[accountId]!;
+    expect(pushed.Email).toBe(await stateOf(app, accountId, "Email"));
+    expect(pushed.Mailbox).toBe(await stateOf(app, accountId, "Mailbox"));
+    expect(pushed.Thread).toBe(await stateOf(app, accountId, "Thread"));
     ws.close();
   });
 

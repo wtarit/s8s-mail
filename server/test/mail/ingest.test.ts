@@ -1,71 +1,77 @@
+/* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { runInDurableObject } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { accountStub } from "../../src/store/subscribe";
+import { deliver as deliverJmap, resp, call, setupAccount } from "../helpers/jmap";
 import { buildRaw, seedAccount } from "../helpers/mail";
-import { emails, deliver, r2Keys } from "../helpers/ingest";
+import { deliver, downloadText, getEmails, r2Keys, searchIds, stateOf } from "../helpers/ingest";
 
 describe("email() handler", () => {
-  it("stores a message for a known recipient: R2 + DO row + inbox + state bump", async () => {
-    await seedAccount("ing-known", ["ana@example.com"]);
-    const stub = accountStub(env, "ing-known");
+  it("stores a message for a known recipient: readable in the inbox, byte for byte", async () => {
+    const { app, accountId, box } = await setupAccount("ing-known", ["ana@example.com"]);
     const raw = buildRaw({ subject: "Greetings" });
+    const before = {
+      Email: await stateOf(app, accountId, "Email"),
+      Thread: await stateOf(app, accountId, "Thread"),
+      Mailbox: await stateOf(app, accountId, "Mailbox"),
+    };
 
     const { setReject } = await deliver("ana@example.com", raw);
     expect(setReject).not.toHaveBeenCalled();
 
-    const [row] = await emails("ing-known");
-    expect(row).toMatchObject({
+    const [email] = await getEmails(app, accountId, [
+      "subject",
+      "size",
+      "mailboxIds",
+      "threadId",
+      "blobId",
+    ]);
+    expect(email).toMatchObject({
       subject: "Greetings",
       size: new TextEncoder().encode(raw).byteLength,
-      parse_state: "pending",
-      preview: "",
+      mailboxIds: { [box("inbox")]: true },
     });
-    // Raw message streamed to R2 under accountId/blobId, byte for byte.
-    const obj = await env.BLOBS.get(`ing-known/${row!.blob_id}`);
-    expect(await obj!.text()).toBe(raw);
+    expect(await searchIds(app, accountId, { inMailbox: box("inbox") })).toHaveLength(1);
+    // The raw message is downloadable unchanged.
+    expect(await downloadText(app, accountId, email!.blobId, "greetings.eml")).toBe(raw);
 
-    const membership = await runInDurableObject(stub, (_i, state) =>
-      state.storage.sql
-        .exec<{ role: string }>(
-          "SELECT m.role FROM email_mailbox em JOIN mailbox m ON m.id = em.mailbox_id WHERE em.email_id = ?",
-          row!.id,
-        )
-        .toArray(),
-    );
-    expect(membership).toEqual([{ role: "inbox" }]);
-
-    const state = await stub.getState();
-    expect(Number(state.Email)).toBeGreaterThan(0);
-    expect(Number(state.EmailDelivery)).toBeGreaterThan(0);
-    expect(Number(state.Thread)).toBeGreaterThan(0);
+    // Delivery changes what clients see: new states for emails, threads and mailbox counts.
+    expect(await stateOf(app, accountId, "Email")).not.toBe(before.Email);
+    expect(await stateOf(app, accountId, "Thread")).not.toBe(before.Thread);
+    expect(await stateOf(app, accountId, "Mailbox")).not.toBe(before.Mailbox);
   });
 
   it("routes plus-addressed and mixed-case recipients to the base address", async () => {
-    await seedAccount("ing-plus", ["ana@example.com".replace("ana", "plus-ana")]);
+    const { app, accountId } = await setupAccount("ing-plus", ["plus-ana@example.com"]);
     const { setReject } = await deliver("Plus-Ana+Newsletters@Example.com", buildRaw());
     expect(setReject).not.toHaveBeenCalled();
-    expect(await emails("ing-plus")).toHaveLength(1);
+    expect(await searchIds(app, accountId)).toHaveLength(1);
   });
 
   it("delivers aliases to the same account", async () => {
-    await seedAccount("ing-alias", ["ing-alias@example.com", "ing-alias-2@example.net"]);
+    const { app, accountId } = await setupAccount("ing-alias", [
+      "ing-alias@example.com",
+      "ing-alias-2@example.net",
+    ]);
     await deliver("ing-alias-2@example.net", buildRaw());
-    expect(await emails("ing-alias")).toHaveLength(1);
+    expect(await searchIds(app, accountId)).toHaveLength(1);
   });
 
   it("rejects an unknown recipient and stores nothing", async () => {
-    await seedAccount("ing-unknown", ["known@example.com"]);
+    const { app, accountId } = await setupAccount("ing-unknown", ["known@example.com"]);
     const before = (await env.BLOBS.list()).objects.length;
     const { setReject } = await deliver("nobody@example.com", buildRaw());
     expect(setReject).toHaveBeenCalledWith("5.1.1 Recipient address rejected");
     expect((await env.BLOBS.list()).objects.length).toBe(before);
+    expect(await searchIds(app, accountId)).toEqual([]);
   });
 
   it("deletes the R2 object and rethrows when the DO call fails", async () => {
     await seedAccount("ing-fail", ["fail@example.com"]);
     const stub = accountStub(env, "ing-fail");
     await stub.init("ing-fail");
+    // Fault injection: the inbox disappears, so the DO cannot file the message.
     await runInDurableObject(stub, (_i, state) => {
       state.storage.sql.exec("DELETE FROM mailbox WHERE role = 'inbox'");
     });
@@ -73,23 +79,24 @@ describe("email() handler", () => {
     expect(await r2Keys("ing-fail")).toEqual([]);
   });
 
-  it("threads a reply into the same thread", async () => {
-    await seedAccount("ing-thread", ["thread@example.com"]);
-    await deliver(
-      "thread@example.com",
-      buildRaw({ subject: "Plan", messageId: "<plan1@example.com>" }),
-    );
-    await deliver(
-      "thread@example.com",
-      buildRaw({
-        subject: "Re: Plan",
-        messageId: "<plan2@example.com>",
-        inReplyTo: "<plan1@example.com>",
-        references: "<plan1@example.com>",
-      }),
-    );
-    const rows = await emails("ing-thread");
-    expect(rows).toHaveLength(2);
-    expect(rows[0]!.thread_id).toBe(rows[1]!.thread_id);
+  it("threads a reply into the same thread, unrelated mail into another", async () => {
+    const { app, accountId } = await setupAccount("ing-thread", ["thread@example.com"]);
+    const to = "thread@example.com";
+    await deliverJmap(accountId, to, { subject: "Plan", messageId: "<plan1@example.com>" });
+    await deliverJmap(accountId, to, {
+      subject: "Re: Plan",
+      messageId: "<plan2@example.com>",
+      inReplyTo: "<plan1@example.com>",
+      references: "<plan1@example.com>",
+    });
+    await deliverJmap(accountId, to, { subject: "Lunch", messageId: "<lunch1@example.com>" });
+
+    const emails = await getEmails(app, accountId, ["subject", "threadId"]);
+    const by = (subject: string) => emails.find((e) => e.subject === subject)!;
+    expect(by("Re: Plan").threadId).toBe(by("Plan").threadId);
+    expect(by("Lunch").threadId).not.toBe(by("Plan").threadId);
+
+    const t = await call(app, [["Thread/get", { accountId, ids: [by("Plan").threadId] }, "t"]]);
+    expect(resp(t).args.list[0].emailIds).toEqual([by("Plan").id, by("Re: Plan").id]);
   });
 });
