@@ -144,7 +144,7 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
         allowDynamicClientRegistration: false,
         allowUnauthenticatedClientRegistration: false,
         // Clients that send `resource=<origin>/jmap` get a JWT access token (aud = that resource)
-        // that JMAP verifies locally; without it the token is opaque (slow D1 path). Seeded
+        // that JMAP verifies locally; without it the token is opaque and JMAP answers 401. Seeded
         // insert-only: edit the row (or `ensureBulwarkClient`) to change it later. Clients must be
         // linked to the resource (`oauth_client_resource`); `ensureBulwarkClient` does that for the
         // webmail client.

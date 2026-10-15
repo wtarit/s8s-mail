@@ -59,7 +59,7 @@ CI=true LITE_TARGET=static LITE_LOCALES=en LITE_JMAP_SERVER_URL=https://mail.exa
 
 Then edit `out/config.json`: `"oauthClientId": "bulwark-lite"`, `"oauthOnly": true`, `"oauthResource": "https://mail.example.com/jmap"`, `"appName"`.
 
-- `oauthResource` (fork branch `feat/lite-oidc-resource` or later) makes the webmail request JWT access tokens. It must equal `${PUBLIC_URL origin}/jmap` exactly. Without it, the webmail gets opaque tokens, which still work but cost ~3× the CPU per JMAP request.
+- `oauthResource` (fork branch `feat/lite-oidc-resource` or later) is **required**: it makes the webmail request JWT access tokens, the only Bearer tokens JMAP accepts. It must equal `${PUBLIC_URL origin}/jmap` exactly. Without it, the webmail gets opaque tokens and every JMAP request fails with 401.
 
 - **SSO-only is required.** Bulwark's password form would send the account password as Basic auth, and our JMAP endpoint only accepts **app passwords** via Basic.
 
