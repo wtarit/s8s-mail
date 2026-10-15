@@ -93,7 +93,7 @@ Where the Bearer path's extra time goes (local ms/request, inclusive, overlappin
 - Better Auth stays the only issuer and signer. `oauthProvider` registers the resource `<origin>/jmap` (10-minute access tokens), and the webmail client sends `resource=` so it gets JWTs.
 - `jmapAuth` verifies the signature locally against the `jwks` table (cached per isolate) and no longer imports Better Auth on that path. The per-request cost is the session, user and account reads (3 D1 queries), the same as Basic, instead of ~7 reads through Better Auth's adapter.
 - Why not a custom opaque-token query (change 1): it would duplicate the provider's validation rules and drift from them, and it still costs a D1 round trip per check. A short-lived JWT makes the token check itself free; revocation is bounded by the 10-minute TTL plus the live `sid` session check.
-- The opaque path stays as a fallback for clients that send no `resource`. Change 3 (eager debug formatting) is untouched.
+- The opaque fallback was later removed (decided 2026-10-14), so JMAP rejects opaque tokens with 401. Change 3 (eager debug formatting) is untouched.
 
 **Local re-measurement after the change** (same method: 300 × `Core/echo` per mode, warm isolate, busy JS ms/request):
 

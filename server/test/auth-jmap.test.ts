@@ -247,7 +247,7 @@ describe("jmapAuth: app passwords (Basic)", () => {
   });
 });
 
-describe("jmapAuth: OAuth access tokens (Bearer)", () => {
+describe("jmapAuth: opaque OAuth access tokens are rejected (Bearer)", () => {
   let ana: Session;
   let tokens: { status: number; body: Json };
   beforeAll(async () => {
@@ -259,23 +259,49 @@ describe("jmapAuth: OAuth access tokens (Bearer)", () => {
       json: { name: "Ana", primaryAddress: "ana@example.com", recoveryEmail: "r@example.org" },
     });
     ana = await acceptInvite(created.body.invite.url);
+    // A flow without `resource`: the provider issues an opaque access token.
     tokens = await oauthTokens(ana);
   });
 
-  it("issues tokens via authorization code + PKCE", () => {
+  it("issues opaque tokens via authorization code + PKCE when no resource is sent", () => {
     expect(tokens.status).toBe(200);
     expect(tokens.body).toMatchObject({ token_type: "Bearer" });
-    expect(tokens.body.access_token).toBeTruthy();
+    expect(tokens.body.access_token.split(".")).toHaveLength(1);
     expect(tokens.body.id_token.split(".")).toHaveLength(3);
     expect(tokens.body.refresh_token).toBeTruthy();
   });
 
-  it("accepts a valid access token", async () => {
-    const res = await callJmap(`Bearer ${tokens.body.access_token}`);
+  it("rejects an opaque access token with 401", async () => {
+    const res = await callJmap(bearer(tokens.body.access_token));
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toContain("Bearer");
+    expect(await res.json()).toMatchObject({ title: "Invalid credentials" });
+  });
+
+  it("rejects an opaque access token on /jmap/session and /jmap/api", async () => {
+    const authorization = bearer(tokens.body.access_token);
+    const session = await exports.default.fetch(
+      new Request(`${BASE}/jmap/session`, { headers: { authorization } }),
+    );
+    expect(session.status).toBe(401);
+    const api = await exports.default.fetch(
+      new Request(`${BASE}/jmap/api`, {
+        method: "POST",
+        headers: { authorization, "content-type": "application/json" },
+        body: JSON.stringify({ using: ["urn:ietf:params:jmap:core"], methodCalls: [] }),
+      }),
+    );
+    expect(api.status).toBe(401);
+  });
+
+  it("still serves the opaque token at the provider's userinfo endpoint (SSO apps)", async () => {
+    const res = await exports.default.fetch(
+      new Request(`${BASE}/api/auth/oauth2/userinfo`, {
+        headers: { authorization: bearer(tokens.body.access_token) },
+      }),
+    );
     expect(res.status).toBe(200);
-    const principal = (await res.json()) as Json;
-    expect(principal).toMatchObject({ userId: ana.userId, email: "ana@example.com" });
-    expect(principal.accountIds).toHaveLength(1);
+    expect(await res.json()).toMatchObject({ sub: ana.userId });
   });
 
   it("rejects tampered, foreign and wrong-type tokens", async () => {
@@ -295,61 +321,6 @@ describe("jmapAuth: OAuth access tokens (Bearer)", () => {
     // an id_token with a tampered signature
     const [h, p] = tokens.body.id_token.split(".");
     expect((await callJmap(`Bearer ${h}.${p}.AAAA`)).status).toBe(401);
-  });
-
-  it("stops working when the user is disabled or the token expires", async () => {
-    await env.DB.prepare("UPDATE oauth_access_token SET expires_at = ?")
-      .bind(Date.now() - 1000)
-      .run();
-    expect((await callJmap(`Bearer ${tokens.body.access_token}`)).status).toBe(401);
-    await env.DB.prepare("UPDATE oauth_access_token SET expires_at = ?")
-      .bind(Date.now() + 60_000)
-      .run();
-    expect((await callJmap(`Bearer ${tokens.body.access_token}`)).status).toBe(200);
-    await env.DB.prepare("UPDATE user SET banned = 1 WHERE email = 'ana@example.com'").run();
-    expect((await callJmap(`Bearer ${tokens.body.access_token}`)).status).toBe(401);
-  });
-
-  it("only first-party (trusted) clients may reach mail", async () => {
-    await env.DB.prepare("UPDATE user SET banned = 0").run();
-    await env.DB.prepare("UPDATE oauth_client SET skip_consent = 0").run();
-    expect((await callJmap(`Bearer ${tokens.body.access_token}`)).status).toBe(401);
-    await env.DB.prepare("UPDATE oauth_client SET skip_consent = 1").run();
-    expect((await callJmap(`Bearer ${tokens.body.access_token}`)).status).toBe(200);
-  });
-
-  it("verifies JWT access tokens against the local jwks table (iss, aud, exp, client)", async () => {
-    await env.DB.prepare("UPDATE user SET banned = 0").run();
-    const { getAuth } = await import("../src/auth");
-    const auth = await getAuth(env);
-    const base = "http://localhost:8787";
-    const mint = async (over: Record<string, unknown> = {}) =>
-      (
-        await auth.api.signJWT({
-          body: {
-            payload: {
-              sub: ana.userId,
-              azp: "bulwark-lite",
-              aud: `${base}/jmap`,
-              iss: `${base}/api/auth`,
-              scope: "openid",
-              exp: Math.floor(Date.now() / 1000) + 300,
-              ...over,
-            },
-          },
-        })
-      ).token;
-    const call = async (t: string) => (await callJmap(`Bearer ${t}`)).status;
-
-    const good = await mint();
-    expect(await call(good)).toBe(200);
-    expect(await call(await mint({ aud: `${base}/other` }))).toBe(401);
-    expect(await call(await mint({ iss: "https://evil.example" }))).toBe(401);
-    expect(await call(await mint({ exp: Math.floor(Date.now() / 1000) - 10 }))).toBe(401);
-    expect(await call(await mint({ azp: "unknown-client" }))).toBe(401);
-    const [h, p, sig] = good.split(".");
-    expect(await call(`${h}.${p}.${sig!.slice(0, -3)}AAA`)).toBe(401);
-    expect(await call(`${h}.${btoa(JSON.stringify({ sub: "x" }))}.${sig}`)).toBe(401);
   });
 
   it("lets a signed-in user read the client's public info for the consent page", async () => {
@@ -533,6 +504,15 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
     expect((await callJmap(bearer(await mint({ aud: `${BASE}/other` })))).status).toBe(401);
     expect((await callJmap(bearer(await mint({ aud: "bulwark-lite" })))).status).toBe(401);
     expect((await callJmap(bearer(await mint({ iss: "https://evil.example" })))).status).toBe(401);
+    expect(
+      (await callJmap(bearer(await mint({ exp: Math.floor(Date.now() / 1000) - 10 })))).status,
+    ).toBe(401);
+    expect((await callJmap(bearer(await mint({ azp: "unknown-client" })))).status).toBe(401);
+    const [mh, mp, msig] = (await mint()).split(".");
+    expect(
+      (await callJmap(bearer(`${mh}.${btoa(JSON.stringify({ sub: "x" }))}.${msig}`))).status,
+    ).toBe(401);
+    expect((await callJmap(bearer(`${mh}.${mp}.${msig!.slice(0, -3)}AAA`))).status).toBe(401);
     const t: string = tokens.body.access_token;
     expect((await callJmap(bearer(t.slice(0, -3) + "AAA"))).status).toBe(401);
     // the ID token is a JWT from the same issuer but for the client audience
@@ -563,15 +543,6 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
     }>();
     expect(links!.n).toBe(1);
     expect((await oauthTokens(ana, JMAP_RESOURCE)).status).toBe(200);
-  });
-
-  it("falls back to opaque access tokens for clients that send no resource", async () => {
-    const opaque = await oauthTokens(ana);
-    expect(opaque.status).toBe(200);
-    expect(opaque.body.access_token.split(".")).toHaveLength(1);
-    const res = await callJmap(bearer(opaque.body.access_token));
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ userId: ana.userId });
   });
 
   it("rejects tokens of a client that is not trusted (after the 60 s cache)", async () => {

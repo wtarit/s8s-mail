@@ -2,7 +2,6 @@ import { and, eq } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import { getDb, schema, type Db } from "../db";
 import { AUTH_BASE_PATH, jmapResourceIdentifier, publicOrigin } from "./config";
-import { getAuth } from "./index";
 import { runInBackground } from "./request-context";
 import type { AppEnv, Principal } from "./types";
 
@@ -60,35 +59,10 @@ async function isTrustedClient(db: Db, clientId: string): Promise<boolean> {
   return !!row && row.skipConsent === true && !row.disabled;
 }
 
-/** Opaque access token (what the provider issues unless a `resource` is requested). */
-async function userIdFromOpaqueToken(env: Env, db: Db, token: string): Promise<string | null> {
-  // Only tokens issued to first-party ("trusted") clients may reach mail: an SSO app registered
-  // for sign-in must not be able to read it. Tokens are stored as base64url(sha256(token)).
-  const { defaultKeyHasher } = await import("@better-auth/api-key");
-  const row = await db
-    .select({ clientId: schema.oauthAccessToken.clientId, userId: schema.oauthAccessToken.userId })
-    .from(schema.oauthAccessToken)
-    .where(eq(schema.oauthAccessToken.token, await defaultKeyHasher(token)))
-    .get();
-  if (!row?.userId || !(await isTrustedClient(db, row.clientId))) return null;
-
-  // The provider's own validation: expiry, revocation, client enabled, session alive.
-  // In-process call, no HTTP self-fetch.
-  const auth = await getAuth(env);
-  try {
-    const info = await auth.api.oauth2UserInfo({
-      headers: new Headers({ authorization: `Bearer ${token}` }),
-    });
-    return info?.sub === row.userId ? row.userId : null;
-  } catch {
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------------------------
 // JWT access tokens. Better Auth signs them; this path only verifies, locally, with two small
-// per-isolate caches. It must not import or initialise Better Auth (that is the point: the opaque
-// path costs ~8 ms CPU on Workers Free, mostly D1 reads through Better Auth's adapter).
+// per-isolate caches. It must not import or initialise Better Auth (opaque tokens, which would
+// need it, are not accepted: they cost ~3x the CPU).
 // ---------------------------------------------------------------------------------------------
 
 /** Never reload the signing keys more often than this because of an unknown `kid`. */
@@ -218,12 +192,14 @@ async function userIdFromJwt(env: Env, db: Db, token: string): Promise<string | 
   return payload.sub;
 }
 
-/** Bearer: an access token issued by our OAuth provider, validated in-process. */
+/**
+ * Bearer: a JWT access token issued by our OAuth provider, verified locally. Anything that is not
+ * a 3-part JWT (e.g. an opaque token from a client that sent no `resource`) is rejected, so a
+ * misconfigured client fails loudly instead of taking a slow path.
+ */
 async function authenticateBearer(env: Env, db: Db, token: string): Promise<Principal | null> {
-  const userId =
-    token.split(".").length === 3
-      ? await userIdFromJwt(env, db, token)
-      : await userIdFromOpaqueToken(env, db, token);
+  if (token.split(".").length !== 3) return null;
+  const userId = await userIdFromJwt(env, db, token);
   if (!userId) return null;
   const user = await loadUser(db, userId);
   if (!user || isBanned(user)) return null;
@@ -279,9 +255,9 @@ async function authenticateBasic(db: Db, encoded: string): Promise<Principal | n
 }
 
 /**
- * Hono middleware for the JMAP API. Accepts `Authorization: Bearer <access token>` (our OAuth
- * provider) or `Authorization: Basic base64(email:app-password)`. Sets `c.var.principal`, or
- * answers 401 with `WWW-Authenticate: Bearer, Basic realm="s8s-mail"`.
+ * Hono middleware for the JMAP API. Accepts `Authorization: Bearer <JWT access token>` (our OAuth
+ * provider; the client must request `resource=<origin>/jmap`, opaque tokens get 401) or
+ * `Authorization: Basic base64(email:app-password)`. Sets `c.var.principal`, or answers 401 with `WWW-Authenticate: Bearer, Basic realm="s8s-mail"`.
  *
  * Usage: `jmap.use("*", jmapAuth)` then `c.get("principal")`.
  */
