@@ -182,11 +182,9 @@ describe("admin: users and invites", () => {
       role: "admin",
       recoveryEmail: "new@example.org",
     });
-    expect(
-      (await env.DB.prepare("SELECT name FROM mail_account WHERE owner_user_id = ?")
-        .bind(id)
-        .first())!.name,
-    ).toBe("Ana B");
+    // the mailbox display name follows the user's name
+    const me = await request<Json>("/api/me", { cookie: ana.cookie });
+    expect(me.body.accounts[0].name).toBe("Ana B");
 
     const disabled = await request<{ user: Json }>(`/api/admin/users/${id}`, {
       method: "PATCH",
@@ -243,11 +241,18 @@ describe("admin: users and invites", () => {
     expect(
       (await request(`/api/admin/users/${id}`, { method: "DELETE", cookie: admin.cookie })).status,
     ).toBe(404);
-    const left = await env.DB.prepare(
-      "SELECT (SELECT count(*) FROM user WHERE id = ?1) AS u, (SELECT count(*) FROM mail_account WHERE owner_user_id = ?1) AS a, (SELECT count(*) FROM address WHERE address = 'ana@example.com') AS ad",
+    const users = await request<{ users: Json[] }>("/api/admin/users", { cookie: admin.cookie });
+    expect(users.body.users.map((u) => u.id)).toEqual([admin.userId]);
+    const addresses = await request<Json>("/api/admin/addresses", { cookie: admin.cookie });
+    expect(addresses.body.addresses.map((a: Json) => a.address)).toEqual(["admin@example.com"]);
+    // the address is free to use again
+    expect((await createUser(admin)).status).toBe(201);
+    // Not observable through the API: no mailbox is left behind for the deleted user.
+    const orphans = await env.DB.prepare(
+      "SELECT count(*) AS n FROM mail_account WHERE owner_user_id = ?",
     )
       .bind(id)
-      .first();
-    expect(left).toEqual({ u: 0, a: 0, ad: 0 });
+      .first<{ n: number }>();
+    expect(orphans!.n).toBe(0);
   });
 });

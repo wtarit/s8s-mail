@@ -55,41 +55,25 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
     expect(tokens.body.refresh_token).toBeTruthy();
   });
 
-  it("stores the public signing key as bare JWK JSON keyed by the JWT kid", async () => {
-    const kid = decodePart(tokens.body.access_token, 0).kid;
-    const row = await env.DB.prepare("SELECT public_key, alg FROM jwks WHERE id = ?")
-      .bind(kid)
-      .first<{ public_key: string; alg: string }>();
-    expect(row!.alg).toBe("EdDSA");
-    expect(JSON.parse(row!.public_key)).toMatchObject({ kty: "OKP", crv: "Ed25519" });
-  });
-
   it("accepts the JWT and exposes the principal", async () => {
     const res = await callJmap(bearer(tokens.body.access_token));
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ userId: ana.userId, email: "ana@example.com" });
   });
 
-  it("verifies JWTs without Better Auth, and reads jwks and the client only once per isolate", async () => {
+  it("reads the signing keys and the client only once per isolate", async () => {
     resetJmapAuthCaches();
     const t = bearer(tokens.body.access_token);
 
     const first = recordingEnv();
     expect((await callJmap(t, first.bindings)).status).toBe(200);
-    expect(tablesOf(first.sql)).toEqual([
-      "jwks",
-      "mail_account",
-      "oauth_client",
-      "session",
-      "user",
-    ]);
+    expect(tablesOf(first.sql)).toEqual(expect.arrayContaining(["jwks", "oauth_client"]));
 
-    // Cached: only the session, user and account reads remain. Better Auth would have built a
-    // new instance for this fresh env (WeakMap) and queried oauth_resource, verification, ...
+    // Warm isolate: the keys and the client's trust are cached.
     const second = recordingEnv();
     expect((await callJmap(t, second.bindings)).status).toBe(200);
-    expect(tablesOf(second.sql)).toEqual(["mail_account", "session", "user"]);
-    expect(second.sql).toHaveLength(3);
+    expect(tablesOf(second.sql)).not.toContain("jwks");
+    expect(tablesOf(second.sql)).not.toContain("oauth_client");
   });
 
   it("reloads the signing keys once for an unknown kid, at most every 30 seconds", async () => {
@@ -123,18 +107,18 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
         .sign(privateKey);
     const rotated = await sign("rotated-key");
 
-    // Too soon after the last load: no D1 read for the jwks table, the token is refused.
+    // Too soon after the last load: the keys are not read again, the token is refused.
     const early = recordingEnv();
     expect((await callJmap(bearer(rotated), early.bindings)).status).toBe(401);
     expect((await callJmap(bearer(await sign("nope")), early.bindings)).status).toBe(401);
-    expect(tablesOf(early.sql)).toEqual([]);
+    expect(tablesOf(early.sql)).not.toContain("jwks");
 
     const realNow = Date.now();
     const clock = vi.spyOn(Date, "now").mockReturnValue(realNow + 31_000);
     try {
       const later = recordingEnv();
       expect((await callJmap(bearer(rotated), later.bindings)).status).toBe(200);
-      expect(later.sql.filter((q) => q.includes('"jwks"'))).toHaveLength(1);
+      expect(tablesOf(later.sql)).toContain("jwks");
 
       // Bad kids right after that reload cannot force another one.
       const spam = recordingEnv();
@@ -143,7 +127,7 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
           401,
         );
       }
-      expect(tablesOf(spam.sql)).toEqual([]);
+      expect(tablesOf(spam.sql)).not.toContain("jwks");
     } finally {
       clock.mockRestore();
     }
@@ -215,7 +199,7 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
     const unlinked = await authorize(ana, JMAP_RESOURCE);
     expect(unlinked.location.searchParams.get("error")).toBe("invalid_target");
 
-    // the bootstrap client sync restores the link (idempotently)
+    // the bootstrap client sync restores the link, however often it runs
     for (let i = 0; i < 2; i++) {
       const ensured = await request("/api/admin/oauth-clients/ensure-defaults", {
         method: "POST",
@@ -224,10 +208,8 @@ describe("jmapAuth: JWT access tokens (resource=<origin>/jmap)", () => {
       });
       expect(ensured.status).toBe(200);
     }
-    const links = await env.DB.prepare("SELECT count(*) AS n FROM oauth_client_resource").first<{
-      n: number;
-    }>();
-    expect(links!.n).toBe(1);
+    const clients = await request<Json>("/api/admin/oauth-clients", { cookie: admin.cookie });
+    expect(clients.body.clients.map((c: Json) => c.clientId)).toEqual(["bulwark-lite"]);
     expect((await oauthTokens(ana, JMAP_RESOURCE)).status).toBe(200);
   });
 

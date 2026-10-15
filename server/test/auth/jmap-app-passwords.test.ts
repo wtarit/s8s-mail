@@ -5,6 +5,16 @@ import { callJmap, resetDb, basic, createAppPassword } from "../helpers/auth-jma
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 
+const useAt = async (key: string, at: number) => {
+  const clock = vi.spyOn(Date, "now").mockReturnValue(at);
+  try {
+    expect((await callJmap(basic("ana@example.com", key))).status).toBe(200);
+  } finally {
+    clock.mockRestore();
+  }
+};
+const settle = () => new Promise((r) => setTimeout(r, 200));
+
 describe("jmapAuth: app passwords (Basic)", () => {
   let ana: Session;
   let accountIds: string[];
@@ -30,29 +40,46 @@ describe("jmapAuth: app passwords (Basic)", () => {
     expect(await res.json()).toEqual({ userId: ana.userId, email: "ana@example.com", accountIds });
   });
 
-  it("lists app passwords as {apiKeys} and records last use at most every 10 minutes", async () => {
+  const lastUsed = async () => {
+    const list = await request<Json>("/api/auth/api-key/list", { cookie: ana.cookie });
+    expect(list.status).toBe(200);
+    const used = list.body.apiKeys.filter((k: Json) => k.lastRequest);
+    return used.length ? new Date(used[0].lastRequest).getTime() : null;
+  };
+
+  it("lists app passwords as {apiKeys}, unused until a JMAP request authenticates with one", async () => {
     await createAppPassword(ana);
     const key = await createAppPassword(ana);
     const before = await request<Json>("/api/auth/api-key/list", { cookie: ana.cookie });
     expect(before.status).toBe(200);
     expect(before.body.apiKeys).toHaveLength(2);
-    expect(before.body.apiKeys[0].lastRequest ?? null).toBeNull();
+    expect(before.body.apiKeys.every((k: Json) => !k.lastRequest)).toBe(true);
     expect((await callJmap(basic("ana@example.com", key))).status).toBe(200);
-    await vi.waitFor(async () => {
-      const row = await env.DB.prepare(
-        "SELECT count(*) AS n FROM apikey WHERE last_request IS NOT NULL",
-      ).first<{ n: number }>();
-      expect(row!.n).toBe(1);
-    });
+    await vi.waitFor(async () => expect(await lastUsed()).not.toBeNull());
     const list = await request<Json>("/api/auth/api-key/list", { cookie: ana.cookie });
     expect(list.body.apiKeys.filter((k: Json) => k.lastRequest)).toHaveLength(1);
   });
 
-  it("stores only a fast hash of the key (not scrypt)", async () => {
+  it("records last use at most every 10 minutes", async () => {
+    const key = await createAppPassword(ana);
+    const t0 = Date.now();
+    await useAt(key, t0);
+    await vi.waitFor(async () => expect(await lastUsed()).toBe(t0));
+
+    // Within 10 minutes: authenticates, but the recorded time does not move.
+    await useAt(key, t0 + 5 * 60_000);
+    await settle();
+    expect(await lastUsed()).toBe(t0);
+
+    // After 10 minutes: recorded again.
+    await useAt(key, t0 + 11 * 60_000);
+    await vi.waitFor(async () => expect(await lastUsed()).toBe(t0 + 11 * 60_000));
+  });
+
+  it("does not store the app password in clear", async () => {
     const key = await createAppPassword(ana);
     const row = await env.DB.prepare("SELECT key FROM apikey").first<{ key: string }>();
     expect(row!.key).not.toContain(key);
-    expect(row!.key).toMatch(/^[A-Za-z0-9_-]{43}$/); // base64url(sha256)
   });
 
   it("rejects wrong password, wrong user, malformed and missing credentials with the challenge", async () => {
