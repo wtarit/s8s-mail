@@ -10,6 +10,7 @@
     "format:check": "oxfmt --check",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
+    "coverage": "pnpm -r coverage",
     "build": "pnpm -r build"
   },
   "devDependencies": {

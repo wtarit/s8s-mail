@@ -11,6 +11,7 @@
     "cf-typegen": "wrangler types --strict-vars=false",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "db:generate:d1": "drizzle-kit generate --config drizzle.config.d1.ts",
     "db:generate:do": "drizzle-kit generate --config drizzle.config.do.ts",
     "db:migrate:local": "wrangler d1 migrations apply DB --local"
@@ -32,6 +33,7 @@
     "@cloudflare/vitest-plugin": "^1.4.0",
     "@s8s/web": "workspace:*",
     "@types/node": "^26.6.5",
+    "@vitest/coverage-istanbul": "4.1.11",
     "drizzle-kit": "^0.31.11",
     "postal-mime": "^4.0.5",
     "typescript": "7.0.2",

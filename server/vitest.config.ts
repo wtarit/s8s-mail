@@ -25,6 +25,15 @@ export default defineConfig(async () => {
       // under load, e.g. when `pnpm -r test` runs web and server tests in parallel).
       testTimeout: 30_000,
       hookTimeout: 30_000,
+      coverage: {
+        // Istanbul, not V8: V8 coverage is unsupported inside workerd.
+        provider: "istanbul" as const,
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/db/auth-schema.ts"],
+        reporter: ["text-summary", "html"],
+        reportsDirectory: "coverage",
+        thresholds: { lines: 90, statements: 88, functions: 89, branches: 76 },
+      },
     },
   };
 });

@@ -23,5 +23,20 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    coverage: {
+      provider: "istanbul",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/components/ui/**", // shadcn
+        "src/main.tsx", // entry point
+        "src/test-setup.ts",
+        "src/test/**", // test helpers
+      ],
+      reporter: ["text-summary", "html"],
+      reportsDirectory: "coverage",
+      thresholds: { lines: 80, statements: 78, functions: 79, branches: 70 },
+    },
   },
 });
