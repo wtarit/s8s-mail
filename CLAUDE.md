@@ -32,7 +32,8 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
 | Server Worker | **Hono** (not Elysia: its Workers adapter is experimental) + Better Auth Hono integration |
 | DB access | **Drizzle** for both D1 (`drizzle-orm/d1`) and account DOs (`drizzle-orm/durable-sqlite` + its migrator, run on DO startup). FTS5 virtual tables and triggers may need raw SQL inside Drizzle migrations. |
 | Validation | **Zod v4** (already a Better Auth dependency).<br>SPA API routes: `@hono/zod-validator`, with schemas shared via `shared/`.<br>JMAP request envelope: a bad envelope returns `urn:ietf:params:jmap:error:notRequest`.<br>JMAP per-method args: bad args return an `invalidArguments` method error, and the other calls in the request still run. |
-| Lint / format | **oxc ecosystem: oxlint + oxfmt** (not Biome, not ESLint/Prettier).<br>oxfmt is pre-1.0, so pin exact versions.<br>Ignore generated files: `worker-configuration.d.ts`, shadcn `components/ui`. |
+| Lint / format | **oxc ecosystem: oxlint + oxfmt** (not Biome, not ESLint/Prettier).<br>oxfmt is pre-1.0, so pin exact versions.<br>Ignore generated files: `worker-configuration.d.ts`, shadcn `components/ui`.<br>**Max 300 lines per file** (oxlint `max-lines`; blank and comment lines not counted), tests included. Split along real seams, keeping the module's import path stable (e.g. `foo.ts` → `foo/index.ts`). Exempt: generated `auth-schema.ts` and the `en.ts` message catalog. |
+| Tests | `server/test/<area>/` mirrors `src/` (api, auth, jmap, mail, mime, send, store); shared setup and helpers in `server/test/helpers/`. `web` and `shared` colocate `*.test.ts(x)` next to the code. |
 | SPA (`web/`) | **Vite + React + shadcn/ui** (Tailwind), Better Auth React client. Components from better-auth-ui may be copied in. |
 
 ## Product scope (V1, decided)

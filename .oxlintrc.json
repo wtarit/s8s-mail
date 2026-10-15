@@ -12,6 +12,7 @@
   "rules": {
     "no-console": ["error", { "allow": ["error", "warn", "info"] }],
     "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "max-lines": ["error", { "max": 300, "skipBlankLines": true, "skipComments": true }],
     "typescript/no-explicit-any": "warn",
     "typescript/consistent-type-imports": "error",
     "import/no-duplicates": "error",
@@ -23,6 +24,10 @@
     {
       "files": ["**/test/**", "**/*.test.ts", "**/*.test.tsx"],
       "rules": { "no-console": "off" }
+    },
+    {
+      "files": ["server/src/db/auth-schema.ts", "web/src/i18n/en.ts"],
+      "rules": { "max-lines": "off" }
     }
   ],
   "ignorePatterns": [
