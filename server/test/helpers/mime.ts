@@ -1,5 +1,5 @@
 import PostalMime from "postal-mime";
-import type { BuildMimeOptions, EmailCreate } from "../src/mime";
+import type { BuildMimeOptions, EmailCreate } from "../../src/mime";
 
 export const dec = new TextDecoder();
 export const enc = new TextEncoder();

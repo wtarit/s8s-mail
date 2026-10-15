@@ -1,8 +1,8 @@
 import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
-import { BASE, request, type Json } from "./helpers";
+import { BASE, request, type Json } from "../helpers";
 
-vi.mock("../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
+vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 
 const WEBMAIL = "http://localhost:4173";
 

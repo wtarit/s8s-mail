@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { MimeBuildError, buildMime, envelopeFromEmail, removeBccHeader } from "../src/mime";
-import { baseEmail, baseOptions, dec, enc, parse } from "./mime-helpers";
+import { MimeBuildError, buildMime, envelopeFromEmail, removeBccHeader } from "../../src/mime";
+import { baseEmail, baseOptions, dec, enc, parse } from "../helpers/mime";
 
 describe("removeBccHeader", () => {
   it("removes a folded Bcc header and nothing else", () => {

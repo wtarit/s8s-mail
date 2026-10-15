@@ -1,8 +1,8 @@
 /* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import { clampPing } from "../src/jmap/eventsource";
-import { deliver, setupAccount } from "./helpers/jmap";
+import { clampPing } from "../../src/jmap/eventsource";
+import { deliver, setupAccount } from "../helpers/jmap";
 
 /** Reads from an SSE body until `done(text)` is true (or times out). */
 async function readUntil(

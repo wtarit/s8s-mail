@@ -8,8 +8,8 @@ import {
   maxAttachmentBytes,
   parseMailbox,
   sendSystemMail,
-} from "../src/send";
-import { buildMime } from "../src/mime";
+} from "../../src/send";
+import { buildMime } from "../../src/mime";
 
 afterEach(() => vi.unstubAllGlobals());
 

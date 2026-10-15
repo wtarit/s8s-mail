@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { MailgunProvider, SendError, getSendProvider } from "../src/send";
+import { MailgunProvider, SendError, getSendProvider } from "../../src/send";
 
 const raw = new TextEncoder().encode("From: a@example.com\r\nTo: b@example.com\r\n\r\nhi\r\n");
 

@@ -20,7 +20,7 @@ export default defineConfig(async () => {
     ],
     test: {
       include: ["test/**/*.test.ts"],
-      setupFiles: ["./test/setup.ts"],
+      setupFiles: ["./test/helpers/setup.ts"],
       // The first request in a file cold-starts the Worker + DO (module loading takes seconds
       // under load, e.g. when `pnpm -r test` runs web and server tests in parallel).
       testTimeout: 30_000,
