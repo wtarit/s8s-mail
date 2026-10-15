@@ -25,6 +25,8 @@ function renderLogin(config: unknown = {}) {
   );
 }
 
+const toggle = () => screen.getByRole("button", { name: t("theme.toggle") });
+
 describe("AuthLayout", () => {
   it("renders the brand, the page title and the theme toggle", () => {
     renderLogin();
@@ -39,13 +41,24 @@ describe("AuthLayout", () => {
     expect(screen.getAllByAltText("Acme Mail logo")).toHaveLength(2);
   });
 
-  it("toggles the dark class and persists the choice", async () => {
-    renderLogin();
-    await userEvent.click(screen.getByRole("button", { name: t("theme.toggle") }));
+  it("toggles the dark class and remembers the choice across page loads", async () => {
+    const reload = (view: ReturnType<typeof renderLogin>) => {
+      view.unmount();
+      document.documentElement.classList.remove("dark"); // a fresh page starts unstyled
+      return renderLogin();
+    };
+
+    let view = renderLogin();
+    await userEvent.click(toggle());
     expect(document.documentElement).toHaveClass("dark");
-    expect(localStorage.getItem("s8s-theme")).toBe("dark");
-    await userEvent.click(screen.getByRole("button", { name: t("theme.toggle") }));
+
+    view = reload(view);
+    expect(document.documentElement).toHaveClass("dark");
+
+    await userEvent.click(toggle());
     expect(document.documentElement).not.toHaveClass("dark");
-    expect(localStorage.getItem("s8s-theme")).toBe("light");
+
+    reload(view);
+    expect(document.documentElement).not.toHaveClass("dark");
   });
 });

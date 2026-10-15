@@ -129,7 +129,7 @@ describe("mailboxes, emails and counts", () => {
       isTruncated: false,
     });
     expect(first.bodyStructure.type).toBe("text/plain");
-    expect(first.blobId).toMatch(/^M[0-9a-f]{32}$/);
+    expect(first.blobId).toMatch(/^[A-Za-z0-9_-]{1,255}$/);
     expect(list[0].threadId).toBe(list[1].threadId);
     expect(list[2].threadId).not.toBe(list[0].threadId);
 

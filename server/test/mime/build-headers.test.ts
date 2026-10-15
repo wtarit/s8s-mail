@@ -177,9 +177,8 @@ describe("buildMime", () => {
     await expect(promise).rejects.toMatchObject({ blobId: "missing" });
   });
 
-  it("builds a 3 MiB attachment message quickly", async () => {
+  it("keeps base64 overhead of a 3 MiB attachment message under 37%", async () => {
     const data = new Uint8Array(3 * 1024 * 1024).map((_, i) => (i * 31) % 256);
-    const t0 = performance.now();
     const { raw } = await buildMime(
       {
         ...baseEmail,
@@ -187,8 +186,6 @@ describe("buildMime", () => {
       },
       { ...baseOptions, fetchBlob: blobStore({ big: data }) },
     );
-    const ms = performance.now() - t0;
-    console.log(`buildMime 3 MiB attachment: ${ms.toFixed(1)} ms wall, ${raw.length} bytes`);
     expect(raw.length).toBeGreaterThan(data.length);
     expect(raw.length).toBeLessThan(Math.ceil(data.length * 1.37) + 2000);
   });

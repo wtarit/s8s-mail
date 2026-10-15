@@ -1,10 +1,20 @@
 /* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { call, deliver, resp, setupAccount } from "../helpers/jmap";
+
+afterEach(() => vi.restoreAllMocks());
+
+// Arrival times in delivery order. Deliberately not monotonic in delivery order, subject
+// or size, so a sort that is ignored (or applied to the wrong property) cannot pass.
+const T0 = Date.UTC(2026, 9, 12, 10, 0, 0);
+const HOUR = 3_600_000;
+const arrival = { alpha: T0 + HOUR, beta: T0 + 2 * HOUR, gamma: T0 };
 
 describe("Email/query filters and sorts", () => {
   it("filters on keywords, size, dates, addresses, text and operators; sorts; pages", async () => {
     const { app, accountId, box } = await setupAccount("jm-6", ["jm-6@example.com"]);
+    const clock = vi.spyOn(Date, "now");
+    clock.mockReturnValue(arrival.alpha);
     await deliver(accountId, `${accountId}@example.com`, {
       subject: "Alpha invoice",
       from: "Zed <zed@example.com>",
@@ -12,6 +22,7 @@ describe("Email/query filters and sorts", () => {
       text: "pay the invoice soon",
       date: "Mon, 12 Oct 2026 10:00:00 +0000",
     });
+    clock.mockReturnValue(arrival.beta);
     await deliver(accountId, `${accountId}@example.com`, {
       subject: "Beta meeting",
       from: "Amy <amy@example.com>",
@@ -19,6 +30,7 @@ describe("Email/query filters and sorts", () => {
       text: "see you at noon",
       date: "Mon, 12 Oct 2026 11:00:00 +0000",
     });
+    clock.mockReturnValue(arrival.gamma);
     await deliver(accountId, `${accountId}@example.com`, {
       subject: "Gamma attachment",
       from: "Bob <bob@example.com>",
@@ -27,6 +39,7 @@ describe("Email/query filters and sorts", () => {
       date: "Mon, 12 Oct 2026 12:00:00 +0000",
       attachment: { filename: "a.txt", mimeType: "text/plain", base64: "aGVsbG8=" },
     });
+    clock.mockRestore();
     const all = resp(
       await call(app, [["Email/query", { accountId, sort: [{ property: "subject" }] }, "q"]]),
     ).args.ids as string[];
@@ -51,6 +64,15 @@ describe("Email/query filters and sorts", () => {
       const byId = new Map(resp(q, 1).args.list.map((e: any) => [e.id, e.subject]));
       return resp(q).args.ids.map((i: string) => byId.get(i));
     };
+    const sizeRes = await call(app, [
+      ["Email/get", { accountId, ids: all, properties: ["subject", "size"] }, "g"],
+    ]);
+    const size: Record<string, number> = Object.fromEntries(
+      resp(sizeRes).args.list.map((e: any) => [e.subject, e.size]),
+    );
+    // The message carrying an attachment is the largest; the other two differ in size.
+    expect(size["Gamma attachment"]).toBeGreaterThan(size["Alpha invoice"]!);
+    expect(size["Alpha invoice"]).toBeGreaterThan(size["Beta meeting"]!);
     await call(app, [
       [
         "Email/set",
@@ -69,6 +91,12 @@ describe("Email/query filters and sorts", () => {
     expect(await subj({ text: "inv*" })).toEqual(["Alpha invoice"]);
     expect(await subj({ after: "2026-01-01T00:00:00Z" })).toHaveLength(3);
     expect(await subj({ before: "2026-01-01T00:00:00Z" })).toEqual([]);
+    // Alpha (11:00) and Beta (12:00) arrived after 10:30; Gamma (10:00) did not.
+    expect(await subj({ after: "2026-10-12T10:30:00Z" })).toEqual([
+      "Alpha invoice",
+      "Beta meeting",
+    ]);
+    expect(await subj({ before: "2026-10-12T10:30:00Z" })).toEqual(["Gamma attachment"]);
     expect(
       await subj({ operator: "OR", conditions: [{ from: "zed" }, { subject: "gamma" }] }),
     ).toEqual(["Alpha invoice", "Gamma attachment"]);
@@ -82,6 +110,15 @@ describe("Email/query filters and sorts", () => {
     expect(await subj({ inMailboxOtherThan: [box("inbox")] })).toEqual([]);
     expect(await subj({ inMailbox: box("trash") })).toEqual([]);
     expect(await subj({ minSize: 1, maxSize: 100000000 })).toHaveLength(3);
+    // minSize is inclusive, maxSize exclusive (RFC 8621 §4.4.1).
+    expect(await subj({ minSize: size["Alpha invoice"] })).toEqual([
+      "Alpha invoice",
+      "Gamma attachment",
+    ]);
+    expect(await subj({ maxSize: size["Alpha invoice"] })).toEqual(["Beta meeting"]);
+    expect(
+      await subj({ minSize: size["Beta meeting"]! + 1, maxSize: size["Gamma attachment"] }),
+    ).toEqual(["Alpha invoice"]);
     expect(await subj({ someInThreadHaveKeyword: "$flagged" })).toEqual(["Alpha invoice"]);
     expect(await subj({ noneInThreadHaveKeyword: "$flagged" })).toEqual([
       "Beta meeting",
@@ -114,11 +151,16 @@ describe("Email/query filters and sorts", () => {
       "Gamma attachment",
       "Alpha invoice",
     ]);
-    expect(
-      await sorted([{ property: "receivedAt", isAscending: false }, { property: "subject" }]).then(
-        (x) => x.length,
-      ),
-    ).toBe(3);
+    expect(await sorted([{ property: "receivedAt", isAscending: false }])).toEqual([
+      "Beta meeting",
+      "Alpha invoice",
+      "Gamma attachment",
+    ]);
+    expect(await sorted([{ property: "receivedAt", isAscending: true }])).toEqual([
+      "Gamma attachment",
+      "Alpha invoice",
+      "Beta meeting",
+    ]);
     expect(await sorted([{ property: "subject", isAscending: false }])).toEqual([
       "Gamma attachment",
       "Beta meeting",
@@ -130,7 +172,16 @@ describe("Email/query filters and sorts", () => {
         { property: "subject" },
       ]),
     ).toEqual(["Alpha invoice", "Beta meeting", "Gamma attachment"]);
-    expect(await sorted([{ property: "size", isAscending: true }]).then((x) => x.length)).toBe(3);
+    expect(await sorted([{ property: "size", isAscending: true }])).toEqual([
+      "Beta meeting",
+      "Alpha invoice",
+      "Gamma attachment",
+    ]);
+    expect(await sorted([{ property: "size", isAscending: false }])).toEqual([
+      "Gamma attachment",
+      "Alpha invoice",
+      "Beta meeting",
+    ]);
     const unsupported = await call(app, [
       ["Email/query", { accountId, sort: [{ property: "nope" }] }, "q"],
     ]);

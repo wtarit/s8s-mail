@@ -1,7 +1,8 @@
 /* oxlint-disable typescript/no-explicit-any -- JSON responses are read untyped in tests */
 import { env } from "cloudflare:workers";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { call, resp, setupAccount } from "../helpers/jmap";
+import { r2Keys } from "../helpers/ingest";
 import { fetchSpy, installMailgunFetchMock } from "../helpers/jmap-send";
 
 installMailgunFetchMock();
@@ -112,11 +113,28 @@ describe("drafts and sending", () => {
       bodyValues: { 1: { value: "hi" } },
       textBody: [{ partId: "1" }],
     };
+    // Background parsing adds derived objects later; wait until it has settled.
+    const parsed = (id: string) =>
+      vi.waitFor(async () => {
+        const g = await call(app, [
+          ["Email/get", { accountId, ids: [id], properties: ["preview"] }, "g"],
+        ]);
+        expect(resp(g).args.list[0].preview).toBe("hi");
+      });
     const session = (await (await app.request("/jmap/session", {}, env)).json()) as any;
     const max = session.accounts["snd-3"].accountCapabilities["urn:ietf:params:jmap:mail"]
       .maxSizeAttachmentsPerEmail as number;
     // fabricate a big blob directly in R2 (bigger than the attachment limit)
     await env.BLOBS.put("snd-3/Ubig", new Uint8Array(max + 1));
+    // How much storage does one successful create add on its own?
+    const k0 = (await r2Keys(accountId)).length;
+    const solo = await call(app, [
+      ["Email/set", { accountId, create: { solo: { ...base, subject: "solo" } } }, "solo"],
+    ]);
+    await parsed(resp(solo).args.created.solo.id);
+    const perMessage = (await r2Keys(accountId)).length - k0;
+    expect(perMessage).toBeGreaterThan(0);
+    const before = (await r2Keys(accountId)).length;
     const r = await call(app, [
       [
         "Email/set",
@@ -147,8 +165,8 @@ describe("drafts and sending", () => {
     expect(a.notCreated.extra.properties).toEqual(["id"]);
     expect(a.notCreated.nokw.properties).toEqual(["keywords"]);
     expect(a.created.ok.id).toBeTruthy();
-    // failed creates leave no orphan blob
-    const keys = (await env.BLOBS.list({ prefix: "snd-3/M" })).objects;
-    expect(keys).toHaveLength(1);
+    // failed creates leave no orphan blob: only the one successful create added storage
+    await parsed(a.created.ok.id);
+    expect((await r2Keys(accountId)).length - before).toBe(perMessage);
   });
 });

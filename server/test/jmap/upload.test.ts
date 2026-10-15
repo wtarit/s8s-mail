@@ -11,8 +11,7 @@ describe("upload and download", () => {
     const { res, json } = await upload(a.app, a.accountId, bytes("hello attachment"), "text/plain");
     expect(res.status).toBe(201);
     expect(json).toMatchObject({ accountId: "up-1", type: "text/plain", size: 16 });
-    expect(json.blobId).toMatch(/^U[0-9a-f]{32}$/);
-    expect(await env.BLOBS.head(`up-1/${json.blobId}`)).not.toBeNull();
+    expect(json.blobId).toMatch(/^[A-Za-z0-9_-]{1,255}$/);
 
     const dl = await a.app.request(
       `/jmap/download/up-1/${json.blobId}/${encodeURIComponent('résumé "x".txt')}?type=text%2Fplain`,
