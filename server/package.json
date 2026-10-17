@@ -1,0 +1,42 @@
+{
+  "name": "@s8s/server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "deploy": "wrangler deploy",
+    "cf-typegen": "wrangler types --strict-vars=false",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
+    "db:generate:d1": "drizzle-kit generate --config drizzle.config.d1.ts",
+    "db:generate:do": "drizzle-kit generate --config drizzle.config.do.ts",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local"
+  },
+  "dependencies": {
+    "@better-auth/api-key": "1.7.7",
+    "@better-auth/oauth-provider": "1.7.7",
+    "@better-auth/passkey": "1.7.7",
+    "@hono/zod-validator": "^0.9.1",
+    "@s8s/shared": "workspace:*",
+    "better-auth": "1.7.7",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.13",
+    "jose": "^6.2.12",
+    "postal-mime": "^4.0.5",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.4.0",
+    "@s8s/web": "workspace:*",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-istanbul": "4.1.11",
+    "drizzle-kit": "^0.31.11",
+    "postal-mime": "^4.0.5",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}

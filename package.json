@@ -1,0 +1,24 @@
+{
+  "name": "s8s-mail",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "wrangler": "wrangler",
+    "dev": "pnpm --filter @s8s/server dev",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "coverage": "pnpm -r coverage",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {
+    "cf": "1.0.0-beta.14",
+    "oxfmt": "0.72.0",
+    "oxlint": "1.87.0",
+    "typescript": "7.0.2",
+    "wrangler": "^4.151.0"
+  },
+  "packageManager": "pnpm@12.14.0+sha512.c18ba6d87993d3d164cb5e8948f32b2c06ee854487e06cd8d86781342fb3e5bb4634367034711e86802baa9c37bea906ce1929ad08d70884c97d801df13389a6"
+}

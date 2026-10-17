@@ -147,3 +147,15 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# Personal / test-environment notes for Claude (never commit)
+CLAUDE.local.md
+!.dev.vars.example
+
+# Local deploy config with real ids/hostnames (never commit)
+wrangler.local.jsonc

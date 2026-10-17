@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1791866945922,
+      "tag": "0000_tranquil_dark_beast",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1791867511161,
+      "tag": "0001_medical_galactus",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791878444548,
+      "tag": "0002_lumpy_vapor",
+      "breakpoints": true
+    }
+  ]
+}
