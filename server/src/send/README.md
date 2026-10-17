@@ -1,1 +1,1 @@
-Outbound sending: provider abstraction (Mailgun, Cloudflare Email Sending).
+Outbound sending: provider abstraction (Mailgun).

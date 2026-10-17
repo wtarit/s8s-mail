@@ -1,12 +1,6 @@
 import PostalMime from "postal-mime";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  CloudflareProvider,
-  MailgunProvider,
-  maxAttachmentBytes,
-  parseMailbox,
-  sendSystemMail,
-} from "../../src/send";
+import { MailgunProvider, maxAttachmentBytes, parseMailbox, sendSystemMail } from "../../src/send";
 import { buildMime } from "../../src/mime";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -48,22 +42,6 @@ describe("sendSystemMail", () => {
     expect(msg.headers.find((h) => h.key === "auto-submitted")?.value).toBe("auto-generated");
   });
 
-  it("sends text-only mail through the Cloudflare provider", async () => {
-    const sent: { from: string; to: string }[] = [];
-    const EMAIL = {
-      send: vi.fn(async (m: EmailMessage) => {
-        sent.push({ from: m.from, to: m.to });
-        return { messageId: "x" };
-      }),
-    };
-    await sendSystemMail(env({ MAIL_PROVIDER: "cloudflare", EMAIL }), {
-      to: "recovery@example.com",
-      subject: "Invite",
-      text: "Welcome",
-    });
-    expect(sent).toEqual([{ from: "no-reply@example.com", to: "recovery@example.com" }]);
-  });
-
   it("propagates provider failures as SendError", async () => {
     vi.stubGlobal("fetch", async () => Response.json({ message: "Forbidden" }, { status: 403 }));
     await expect(
@@ -96,34 +74,30 @@ describe("parseMailbox", () => {
 
 describe("maxAttachmentBytes", () => {
   const mailgun = new MailgunProvider({ apiKey: "k", domain: "d.example.com", region: "us" });
-  const cloudflare = new CloudflareProvider({ binding: undefined });
 
-  it("computes the advertised limits", () => {
-    expect(maxAttachmentBytes(cloudflare)).toBe(3_735_552);
+  it("computes the advertised limit", () => {
     expect(maxAttachmentBytes(mailgun)).toBe(18_173_445);
   });
 
-  it("real messages with several attachments at the limit stay under each provider's limit", async () => {
-    for (const p of [cloudflare, mailgun]) {
-      const limit = maxAttachmentBytes(p);
-      const n = 8;
-      const blob = new Uint8Array(Math.floor(limit / n)).map((_, i) => i % 251);
-      const { size } = await buildMime(
-        {
-          from: [{ email: "a@example.com" }],
-          to: [{ email: "b@example.com" }],
-          subject: "big",
-          bodyValues: { t: { value: "x".repeat(50_000) } },
-          textBody: [{ partId: "t" }],
-          attachments: Array.from({ length: n }, (_, i) => ({
-            blobId: "b",
-            type: "application/octet-stream",
-            name: `file-${i}-${"ä".repeat(20)}.bin`,
-          })),
-        },
-        { fetchBlob: async () => blob, messageIdDomain: "example.com", includeBcc: true },
-      );
-      expect(size).toBeLessThanOrEqual(p.maxMessageBytes);
-    }
+  it("real messages with several attachments at the limit stay under the provider's limit", async () => {
+    const limit = maxAttachmentBytes(mailgun);
+    const n = 8;
+    const blob = new Uint8Array(Math.floor(limit / n)).map((_, i) => i % 251);
+    const { size } = await buildMime(
+      {
+        from: [{ email: "a@example.com" }],
+        to: [{ email: "b@example.com" }],
+        subject: "big",
+        bodyValues: { t: { value: "x".repeat(50_000) } },
+        textBody: [{ partId: "t" }],
+        attachments: Array.from({ length: n }, (_, i) => ({
+          blobId: "b",
+          type: "application/octet-stream",
+          name: `file-${i}-${"ä".repeat(20)}.bin`,
+        })),
+      },
+      { fetchBlob: async () => blob, messageIdDomain: "example.com", includeBcc: true },
+    );
+    expect(size).toBeLessThanOrEqual(mailgun.maxMessageBytes);
   });
 });

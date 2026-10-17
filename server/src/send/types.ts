@@ -31,7 +31,7 @@ export class SendError extends Error {
 }
 
 export interface SendProvider {
-  readonly name: "mailgun" | "cloudflare";
+  readonly name: "mailgun";
   /** Largest raw message (bytes) the provider accepts. */
   readonly maxMessageBytes: number;
   /** Largest recipient count per message. */

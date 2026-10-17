@@ -144,7 +144,6 @@ const env = (over: Record<string, unknown>) =>
 describe("getSendProvider", () => {
   it("selects by MAIL_PROVIDER", () => {
     expect(getSendProvider(env({})).name).toBe("mailgun");
-    expect(getSendProvider(env({ MAIL_PROVIDER: "cloudflare" })).name).toBe("cloudflare");
     expect(() => getSendProvider(env({ MAIL_PROVIDER: "sendgrid" }))).toThrow(SendError);
   });
 

@@ -41,7 +41,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
 - Receive mail via Cloudflare Email Routing → Worker `email()` handler, and store it.
 - Users access mail **only over JMAP** (RFC 8620 core, RFC 8621 mail). Email only: **no CardDAV/CalDAV, no contacts/calendars JMAP**.
 - Organizational/personal deployment: admins create and remove accounts. No public signup endpoint
-- Outbound sending through a **provider abstraction**. V1 providers: **Cloudflare Email Sending** and **Mailgun**. On Workers Free, only Mailgun works. Adding a provider must not require touching JMAP or storage code.
+- Outbound sending through a **provider abstraction**. V1 provider: **Mailgun**. Adding a provider must not require touching JMAP or storage code.
   - **The provider is chosen per deployment** (one active provider for the whole install).
   - Advertise its effective limit as a single deployment-wide `maxSizeAttachmentsPerEmail`, minus MIME/base64 overhead, and enforce the same limit in `EmailSubmission/set`.
 - **SSO is in V1.** s8s-mail is the OIDC provider for Bulwark and other internal apps.
@@ -55,7 +55,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
   - The admin creates a user and receives a **one-time invite link** to hand over out of band. The user opens it and registers a passkey.
   - Each user also has an **external recovery address**, set by the admin and stored in D1. Magic links are always sent to that recovery address, **never to the user's own mailbox on this server**, because that would be circular.
   - Losing a passkey or password means a magic link to the recovery address, or a new invite from the admin.
-  - Magic-link and invite emails go out through the configured sending provider (Mailgun on Free).
+  - Magic-link and invite emails go out through the configured sending provider (Mailgun).
 - **Build our own frontend, not backend compatibility layers.** We write the login, consent, password-reset, account and admin pages against Better Auth.
   - Do **not** implement Stalwart-specific endpoints (`/api/auth`, `/api/discover`) or Stalwart `x:` JMAP methods to fit a client.
 - **The auth/account/admin frontend is a static SPA** (no SSR).
@@ -73,7 +73,6 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
   - It uses standard `.well-known` discovery and takes the client ID from `config.json`.
   - Scope: `docs/research/2026-10-auth-storage-webmail.md` §5.
 - Host everything on Cloudflare. Only outbound delivery (Mailgun) is external.
-- Using Cloudflare Email Sending for normal person-to-person mail is accepted. Cloudflare's own agentic-inbox demo does the same.
 - Use only Cloudflare products available to the public (GA or open public beta). No private-beta or waitlist features.
 
 ## Storage architecture

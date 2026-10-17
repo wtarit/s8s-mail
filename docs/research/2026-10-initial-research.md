@@ -208,6 +208,7 @@ Bulwark contains a ~2,500-line mock JMAP server at `s8s-mail-webmail/app/api/dev
 2. **Auth:** Better Auth on D1 with `disableSignUp` and the admin plugin. App passwords via Basic for JMAP clients. Add `@better-auth/oauth-provider` when SSO is needed. Minimal server-rendered pages in s8s-mail: login, consent, reset password, admin user list.
 3. **Webmail:** Bulwark Lite on Workers Static Assets as its own Worker. Decide between SSO options (a)/(b)/(c) in §4.2.
 4. **Sending:** a `SendProvider` interface taking raw MIME plus envelope and exposing `maxMessageBytes`. V1 implementations are Cloudflare (`EmailMessage` raw path) and Mailgun (`messages.mime`). Use a queue for retries; Mailgun webhooks feed delivery status.
+   - **Resolved 2026-10-17:** Cloudflare Email Sending support was dropped. Mailgun is the only V1 provider; the `SendProvider` abstraction stays for future providers.
 5. **Plan:** Workers Paid.
 
 ## 7. Open decisions
@@ -221,5 +222,5 @@ Continued in `2026-10-auth-storage-webmail.md` §7.
 - [x] Provider selection: **per deployment**, so `maxSizeAttachmentsPerEmail` is one deployment-wide value.
 - [x] Admin surface: our own web frontend (Better Auth admin plugin). The exact layout is still open.
 - [x] Spam handling: **none in V1**. Options are in follow-up doc §6.
-- [x] Cloudflare's "transactional" positioning of Email Sending: **accepted** for person-to-person mail (CLAUDE.md).
+- [x] Cloudflare's "transactional" positioning of Email Sending: **accepted** for person-to-person mail. Moot since 2026-10-17: Cloudflare Email Sending support was dropped; Mailgun is the only V1 provider (CLAUDE.md).
 - [x] Webmail and JMAP deployment: `webmail.<domain>` + `mail.<domain>`, same site, with CORS on JMAP (CLAUDE.md).
