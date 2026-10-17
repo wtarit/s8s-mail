@@ -1,10 +1,10 @@
 # s8s-mail
 
-Serverless mail server on Cloudflare. It receives mail with Email Workers, stores it, serves mailboxes over **JMAP**, and sends through pluggable outbound providers. License: MIT.
+Serverless mail server on Cloudflare. It receives mail with Email Workers, stores it, serves mailboxes over **JMAP**, and sends through pluggable outbound providers.
 
 ## Repo layout
 
-pnpm workspace, **flat, with no `apps/` or `packages/` nesting**:
+pnpm workspace:
 - `server/`: the Worker. JMAP API, Better Auth, `/.well-known/*`, the `email()` handler, Durable Object classes. It serves `../web/dist` as static assets.
 - `web/`: the auth/account/admin SPA.
 - `shared/`: types and schemas shared between server and web.
@@ -23,7 +23,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
   - `cf-typegen`: regenerates the committed `worker-configuration.d.ts` after any `wrangler.jsonc` change.
 - `wrangler.jsonc` holds placeholder resource ids (`TODO(deploy)`); never run `wrangler d1 create`, `r2 bucket create` or `deploy` without the owner's say-so.
 
-## Stack (decided)
+## Stack
 
 | Concern | Choice |
 |---|---|
@@ -36,12 +36,12 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
 | Tests | `server/test/<area>/` mirrors `src/` (api, auth, jmap, mail, mime, send, store); shared setup and helpers in `server/test/helpers/`. `web` and `shared` colocate `*.test.ts(x)` next to the code. |
 | SPA (`web/`) | **Vite + React + shadcn/ui** (Tailwind), Better Auth React client. Components from better-auth-ui may be copied in. |
 
-## Product scope (V1, decided)
+## Product scope
 
 - Receive mail via Cloudflare Email Routing → Worker `email()` handler, and store it.
 - Users access mail **only over JMAP** (RFC 8620 core, RFC 8621 mail). Email only: **no CardDAV/CalDAV, no contacts/calendars JMAP**.
-- Organizational/personal deployment: **admins create and remove accounts. No public signup endpoint, ever.**
-- Outbound sending through a **provider abstraction**. V1 providers: **Cloudflare Email Sending** and **Mailgun**. On Workers Free, only Mailgun works, because Cloudflare Email Sending needs Workers Paid. Adding a provider must not require touching JMAP or storage code.
+- Organizational/personal deployment: admins create and remove accounts. No public signup endpoint
+- Outbound sending through a **provider abstraction**. V1 providers: **Cloudflare Email Sending** and **Mailgun**. On Workers Free, only Mailgun works. Adding a provider must not require touching JMAP or storage code.
   - **The provider is chosen per deployment** (one active provider for the whole install).
   - Advertise its effective limit as a single deployment-wide `maxSizeAttachmentsPerEmail`, minus MIME/base64 overhead, and enforce the same limit in `EmailSubmission/set`.
 - **SSO is in V1.** s8s-mail is the OIDC provider for Bulwark and other internal apps.
@@ -76,7 +76,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
 - Using Cloudflare Email Sending for normal person-to-person mail is accepted. Cloudflare's own agentic-inbox demo does the same.
 - Use only Cloudflare products available to the public (GA or open public beta). No private-beta or waitlist features.
 
-## Storage architecture (decided)
+## Storage architecture
 
 **One SQLite-backed Durable Object per JMAP account** holds that account's mail data:
 - mailboxes, emails, threads, keywords;
@@ -100,16 +100,7 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
 
 ## Platform constraints (verified 2026-10-12, re-check if old)
 
-- **No inbound TCP on Workers** → no own MX, IMAP, POP3 or SMTP submission. Inbound mail arrives only through Email Routing, and clients use JMAP over HTTPS.
-- **No outbound port 25** → outbound always goes through a provider's HTTP API.
-- Mail domains must be on **Cloudflare DNS**.
 - Inbound Email Routing max message: **25 MiB**. `message.raw` is a **single-use stream**.
-- Cloudflare Email Sending (public beta, **Workers Paid only**):
-  - Message size: **5 MiB total, including attachments**.
-  - Recipients: 50 per message (to + cc + bcc).
-  - Attachments: up to 32.
-  - Headers: custom headers go through an allowlist.
-  - Raw RFC 5322 MIME is accepted via `new EmailMessage(from, to, raw)` from `cloudflare:email`.
 - Mailgun: 25 MB max message, raw MIME via `POST /v3/{domain}/messages.mime`, separate US/EU API hosts.
 - **Target plan: Workers Free** (decided 2026-10-12, as an experiment: build it and see what breaks).
   - Every invocation (`fetch`, `email`, Durable Object request/alarm/WebSocket message) gets **10 ms CPU**. DOs get the same limit as Workers (DO FAQ), so they are no workaround.
@@ -119,15 +110,6 @@ Commands (run from the repo root; Node 22.22+ and pnpm 11):
     - parsing large MIME messages (keep `email()` minimal and defer heavy parsing);
     - building outgoing MIME with attachments;
     - 50 subrequests per invocation.
-  - Daily quotas:
-
-    | Resource | Free quota |
-    |---|---|
-    | Worker requests | 100k / day |
-    | D1 rows read | 5M / day |
-    | D1 rows written | 100k / day |
-    | D1 per database | 500 MB |
-    | DO SQLite | 1 GB per object, 5 GB per account |
 
   - Code should not assume Paid limits. When something can only work on Paid, gate it behind config and say so.
 - **Workers Static Assets in SPA mode** answers browser *navigations* with `index.html` without running the Worker.
@@ -193,13 +175,8 @@ Verified in the Bulwark source (v1.14.2; paths below are relative to `../s8s-mai
 - **Never put personal addresses, the test domain or account details in tracked files.** That covers code, wrangler config, fixtures, tests, docs and commit messages. Use `example.com` placeholders in tracked files. Deployment-specific wrangler values (routes, custom domains) go in a gitignored config.
 - The Mailgun API key is in `.env` as `MAILGUN_API`. It is gitignored: never commit it, print it, or copy it into code or wrangler config. Deploy it with `wrangler secret put`.
 
-## Git and PRs
-
-- Branch from `main`, then open PRs to `main`.
-
 ## Docs convention
 
-- This file holds **only decided scope, verified constraints and working conventions**. If a question is not settled, it does not go here.
 - Research, option comparisons and open questions go in `docs/research/` as separate dated files.
 - When a decision is made, move the conclusion into this file. Mark the research doc's open item as resolved.
 - Current open decisions are in `docs/research/2026-10-auth-storage-webmail.md` §7.
