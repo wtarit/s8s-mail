@@ -1,6 +1,6 @@
 # Deploying s8s-mail
 
-Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored files below. `mail.example.com` / `webmail.example.com` stand in for your hostnames.
+Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored `server/wrangler.local.jsonc` or in Worker secrets. `mail.example.com` / `webmail.example.com` stand in for your hostnames.
 
 ## 1. Resources (once)
 
@@ -17,10 +17,6 @@ pnpm --filter @s8s/server exec wrangler r2 bucket create s8s-mail-blobs
    - `PUBLIC_URL` (`https://mail.example.com`) and `WEBMAIL_ORIGIN` (`https://webmail.example.com`);
    - `MAILGUN_DOMAIN`, `SYSTEM_MAIL_FROM`;
    - the custom domain route: `"routes": [{ "pattern": "mail.example.com", "custom_domain": true }]`.
-3. Put the secrets in `server/.deploy.secrets.env` (gitignored, `KEY=value` lines):
-   - `BETTER_AUTH_SECRET` (`openssl rand -base64 48`);
-   - `BOOTSTRAP_TOKEN` (`openssl rand -hex 32`);
-   - `MAILGUN_API`.
 
 ## 3. Deploy the main Worker
 
@@ -28,8 +24,18 @@ pnpm --filter @s8s/server exec wrangler r2 bucket create s8s-mail-blobs
 pnpm build
 cd server
 pnpm exec wrangler d1 migrations apply DB --remote -c wrangler.local.jsonc
-pnpm exec wrangler deploy -c wrangler.local.jsonc --secrets-file .deploy.secrets.env
+pnpm exec wrangler deploy -c wrangler.local.jsonc
 ```
+
+Then set the secrets once. They persist across later deploys, so only re-run this to rotate one:
+
+```bash
+pnpm exec wrangler secret put BETTER_AUTH_SECRET -c wrangler.local.jsonc  # openssl rand -base64 48
+pnpm exec wrangler secret put BOOTSTRAP_TOKEN -c wrangler.local.jsonc     # openssl rand -hex 32
+pnpm exec wrangler secret put MAILGUN_API -c wrangler.local.jsonc
+```
+
+Use production values that differ from your local `server/.dev.vars`. Keep `BOOTSTRAP_TOKEN` at hand for step 5.
 
 Account Durable Objects migrate themselves on first use.
 

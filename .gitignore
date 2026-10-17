@@ -159,4 +159,3 @@ CLAUDE.local.md
 
 # Local deploy config with real ids/hostnames (never commit)
 wrangler.local.jsonc
-.deploy.secrets.env

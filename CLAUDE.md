@@ -173,7 +173,6 @@ Verified in the Bulwark source (v1.14.2; paths below are relative to `../s8s-mai
 
 - The concrete test zone, hostnames, Mailgun domain and test mailbox are in **`CLAUDE.local.md`** (gitignored). Read it before deploying or running end-to-end mail tests.
 - **Never put personal addresses, the test domain or account details in tracked files.** That covers code, wrangler config, fixtures, tests, docs and commit messages. Use `example.com` placeholders in tracked files. Deployment-specific wrangler values (routes, custom domains) go in a gitignored config.
-- The Mailgun API key is in `.env` as `MAILGUN_API`. It is gitignored: never commit it, print it, or copy it into code or wrangler config. Deploy it with `wrangler secret put`.
 
 ## Docs convention
 
