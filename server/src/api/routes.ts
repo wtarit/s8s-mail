@@ -7,6 +7,7 @@ import { getDb, schema } from "../db";
 import { accountRoutes } from "./account-routes";
 import { adminDomainRoutes } from "./admin-domain-routes";
 import { adminUserRoutes } from "./admin-user-routes";
+import { inviteRoutes } from "./invite-routes";
 import { ApiHttpError, respondError } from "./errors";
 import { checkOrigin, requireAdmin } from "./guards";
 import {
@@ -56,6 +57,7 @@ api.post("/bootstrap", validate("json", bootstrapRequest), async (c) => {
 });
 
 api.route("/", accountRoutes);
+api.route("/", inviteRoutes);
 
 // ------------------------------------------------------------------ admin
 

@@ -159,3 +159,6 @@ CLAUDE.local.md
 
 # Local deploy config with real ids/hostnames (never commit)
 wrangler.local.jsonc
+
+# Verified Serenity static-Wasm build artifacts (recreated by server scripts)
+server/src/auth/.generated/

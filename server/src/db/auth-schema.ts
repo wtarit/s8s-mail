@@ -39,6 +39,10 @@ export const session = sqliteTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     impersonatedBy: text("impersonated_by"),
+    passwordVerifiedAt: integer("password_verified_at", { mode: "timestamp_ms" }),
+    passkeyVerifiedAt: integer("passkey_verified_at", { mode: "timestamp_ms" }),
+    recoveryVerifiedAt: integer("recovery_verified_at", { mode: "timestamp_ms" }),
+    inviteId: text("invite_id"),
   },
   (table) => [index("session_userId_idx").on(table.userId)],
 );

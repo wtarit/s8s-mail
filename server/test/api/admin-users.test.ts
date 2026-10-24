@@ -2,15 +2,8 @@ import { env } from "cloudflare:workers";
 import { adminUser, apiError, inviteInfoResponse, meResponse } from "@s8s/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
-import {
-  acceptInvite,
-  bootstrapAdmin,
-  request,
-  resetDb,
-  tokenFromInviteUrl,
-  type Session,
-  type Json,
-} from "../helpers";
+import { request, resetDb, tokenFromInviteUrl, type Session, type Json } from "../helpers";
+import { acceptInvite, bootstrapAdmin, openInvite } from "../helpers/accounts";
 import { createUser } from "../helpers/admin";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
@@ -24,7 +17,7 @@ describe("admin: users and invites", () => {
     admin = await bootstrapAdmin();
   });
 
-  it("create user -> invite info -> accept -> session cookie works on /api/me", async () => {
+  it("create user -> invite info -> open -> first factor -> session cookie works on /api/me", async () => {
     const created = await createUser(admin);
     expect(created.status).toBe(201);
     expect(adminUser.safeParse(created.body.user).success).toBe(true);
@@ -54,6 +47,12 @@ describe("admin: users and invites", () => {
     // /api/me without a session is 401
     expect((await request("/api/me")).status).toBe(401);
 
+    // Opening the link does not use it up ...
+    const opened = await openInvite(created.body.invite.url);
+    expect((await request<Json>(`/api/invite/${token}`)).body.status).toBe("valid");
+    // ... and its session is enrollment-only: no /api/me yet.
+    expect((await request("/api/me", { cookie: opened.cookie })).status).toBe(403);
+
     const session = await acceptInvite(created.body.invite.url);
     expect(session.cookie).toContain("better-auth.session_token");
     const me = await request("/api/me", { cookie: session.cookie });
@@ -62,7 +61,8 @@ describe("admin: users and invites", () => {
     expect(parsed.user).toMatchObject({
       email: "ana@example.com",
       role: "user",
-      hasPassword: false,
+      hasPassword: true,
+      passkeyCount: 0,
       recoveryEmailMasked: "a•••@example.org",
     });
     expect(parsed.accounts).toHaveLength(1);
@@ -73,8 +73,8 @@ describe("admin: users and invites", () => {
     });
     expect(parsed.accounts[0]!.id).toMatch(/^a[0-9a-f]{20}$/);
 
-    // one-time: second accept and info both say used
-    const again = await request(`/api/invite/${token}/accept`, { method: "POST", json: {} });
+    // the first saved factor used it up: opening again and the info both say used
+    const again = await request(`/api/invite/${token}/session`, { method: "POST", json: {} });
     expect(again.status).toBe(409);
     expect((again.body as Json).error.code).toBe("invite_used");
     expect((await request<Json>(`/api/invite/${token}`)).body.status).toBe("used");
@@ -86,14 +86,14 @@ describe("admin: users and invites", () => {
     expect(ana.lastSignInAt).not.toBeNull();
   });
 
-  it("an expired invite cannot be accepted", async () => {
+  it("an expired invite cannot be opened", async () => {
     const created = await createUser(admin);
     await env.DB.prepare("UPDATE invite SET expires_at = ?")
       .bind(Date.now() - 1000)
       .run();
     const token = tokenFromInviteUrl(created.body.invite.url);
     expect((await request<Json>(`/api/invite/${token}`)).body.status).toBe("expired");
-    const res = await request(`/api/invite/${token}/accept`, { method: "POST", json: {} });
+    const res = await request(`/api/invite/${token}/session`, { method: "POST", json: {} });
     expect(res.status).toBe(410);
     expect((res.body as Json).error.code).toBe("invite_expired");
     expect((await request("/api/invite/unknown-token")).status).toBe(404);
@@ -201,7 +201,7 @@ describe("admin: users and invites", () => {
     });
     expect(
       (
-        await request(`/api/invite/${tokenFromInviteUrl(inv.body.invite.url)}/accept`, {
+        await request(`/api/invite/${tokenFromInviteUrl(inv.body.invite.url)}/session`, {
           method: "POST",
           json: {},
         })
@@ -213,7 +213,7 @@ describe("admin: users and invites", () => {
       cookie: admin.cookie,
       json: { disabled: false },
     });
-    expect(enabled.body.user.status).toBe("invited");
+    expect(enabled.body.user.status).toBe("active");
 
     // admins cannot disable/demote/delete themselves
     for (const json of [{ disabled: true }, { role: "user" }]) {

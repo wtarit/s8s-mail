@@ -1,15 +1,9 @@
 import { env } from "cloudflare:workers";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
-import {
-  acceptInvite,
-  bootstrapAdmin,
-  cookieFrom,
-  request,
-  resetDb,
-  type Session,
-  type Json,
-} from "../helpers";
+import { login, setPassword, NEXT_PASSWORD } from "../helpers/opaque";
+import { cookieFrom, request, resetDb, type Session, type Json } from "../helpers";
+import { acceptInvite, bootstrapAdmin } from "../helpers/accounts";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 const send = vi.mocked(sendSystemMail);
@@ -45,11 +39,11 @@ describe("sign-up is disabled", () => {
       method: "POST",
       json: { ...credentials, name: "New" },
     });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ code: "EMAIL_PASSWORD_SIGN_UP_DISABLED" });
+    expect(res.status).toBe(404);
+    expect(res.body).toBe("Not Found");
     expect(await emailsOf(admin)).toEqual(["admin@example.com"]);
     const signIn = await request("/api/auth/sign-in/email", { method: "POST", json: credentials });
-    expect(signIn.status).toBe(401);
+    expect(signIn.status).toBe(404);
   });
 
   it("does not create users through the magic-link endpoint either", async () => {
@@ -59,95 +53,6 @@ describe("sign-up is disabled", () => {
     });
     expect(res.status).toBe(200);
     expect(await emailsOf(admin)).toEqual(["admin@example.com"]);
-  });
-});
-
-describe("password", () => {
-  let admin: Session;
-  let ana: Session;
-  beforeEach(async () => {
-    await resetDb();
-    admin = await bootstrapAdmin();
-    const created = await newUser(admin);
-    ana = await acceptInvite(created.invite.url);
-  });
-
-  it("is set once, then needs the current password to change; email+password sign-in works", async () => {
-    // no password yet
-    expect((await request<Json>("/api/me", { cookie: ana.cookie })).body.user.hasPassword).toBe(
-      false,
-    );
-    // too short
-    const short = await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { newPassword: "short" },
-    });
-    expect(short.status).toBe(400);
-
-    const set = await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { newPassword: "first password 123" },
-    });
-    expect(set.status).toBe(200);
-    expect((await request<Json>("/api/me", { cookie: ana.cookie })).body.user.hasPassword).toBe(
-      true,
-    );
-
-    // changing requires the current password
-    const noCurrent = await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { newPassword: "second password 456" },
-    });
-    expect(noCurrent.status).toBe(400);
-    const wrongCurrent = await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { currentPassword: "not my password", newPassword: "second password 456" },
-    });
-    expect(wrongCurrent.status).toBe(400);
-    expect((wrongCurrent.body as Json).error.code).toBe("invalid_password");
-    const changed = await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { currentPassword: "first password 123", newPassword: "second password 456" },
-    });
-    expect(changed.status).toBe(200);
-
-    const bad = await request("/api/auth/sign-in/email", {
-      method: "POST",
-      json: { email: "ana@example.com", password: "first password 123" },
-    });
-    expect(bad.status).toBe(401);
-    const good = await request<Json>("/api/auth/sign-in/email", {
-      method: "POST",
-      json: { email: "Ana@Example.com", password: "second password 456" },
-    });
-    expect(good.status).toBe(200);
-    const cookie = cookieFrom(good.headers);
-    expect((await request<Json>("/api/me", { cookie })).body.user.email).toBe("ana@example.com");
-  });
-
-  it("a disabled user cannot sign in with a password", async () => {
-    await request("/api/account/password", {
-      method: "POST",
-      cookie: ana.cookie,
-      json: { newPassword: "first password 123" },
-    });
-    await request(`/api/admin/users/${ana.userId}`, {
-      method: "PATCH",
-      cookie: admin.cookie,
-      json: { disabled: true },
-    });
-    const res = await request("/api/auth/sign-in/email", {
-      method: "POST",
-      json: { email: "ana@example.com", password: "first password 123" },
-    });
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "BANNED_USER" });
-    expect((await request("/api/me", { cookie: ana.cookie })).status).toBe(401);
   });
 });
 
@@ -167,7 +72,7 @@ describe("magic link", () => {
     send.mockClear();
   });
 
-  it("is sent only to the recovery address and signs the user in", async () => {
+  it("is sent only to the recovery address and authorizes password recovery", async () => {
     const res = await request<Json>("/api/auth/sign-in/magic-link", {
       method: "POST",
       json: { email: "ANA@example.com", callbackURL: "/" },
@@ -185,6 +90,9 @@ describe("magic link", () => {
     const cookie = cookieFrom(verify.headers);
     expect(cookie).toContain("better-auth.session_token");
     expect((await request<Json>("/api/me", { cookie })).body.user.email).toBe("ana@example.com");
+    await setPassword({ cookie, userId: ana.userId }, NEXT_PASSWORD);
+    expect((await login("ana@example.com", NEXT_PASSWORD)).status).toBe(200);
+    expect((await login()).status).toBe(401);
 
     // single use
     const replay = await request(url.replace("http://localhost:8787", ""), { method: "GET" });

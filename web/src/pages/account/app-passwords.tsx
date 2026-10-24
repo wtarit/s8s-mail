@@ -9,6 +9,7 @@ import { FormError } from "@/components/form-error";
 import { ListSkeleton } from "@/components/list-skeleton";
 import { LoadError } from "@/components/load-error";
 import { LoadingButton } from "@/components/loading-button";
+import { useStepUp } from "@/components/step-up";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { unwrapAuth } from "@/lib/api";
 import { getAuthClient } from "@/lib/auth-client";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { isStepUpCancelled } from "@/lib/step-up";
 import { useMe } from "@/lib/me";
 import { useResource } from "@/lib/use-resource";
 import { useT } from "@/i18n";
@@ -139,6 +141,7 @@ function CreateDialog({
   onCreated: () => Promise<void>;
 }) {
   const t = useT();
+  const stepUp = useStepUp();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -163,11 +166,15 @@ function CreateDialog({
     setBusy(true);
     setError(undefined);
     try {
-      const created = await unwrapAuth(getAuthClient().apiKey.create({ name: name.trim() }));
+      const created = await stepUp.run(() =>
+        unwrapAuth(getAuthClient().apiKey.create({ name: name.trim() })),
+      );
       setSecret(created.key);
       await onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("error.generic"));
+      if (!isStepUpCancelled(err)) {
+        setError(err instanceof Error ? err.message : t("error.generic"));
+      }
     }
     setBusy(false);
   }

@@ -68,12 +68,78 @@ describe("magic link pages", () => {
     await waitFor(() =>
       expect(mockAuth.client.magicLink.verify).toHaveBeenCalledWith({ query: { token: "abc" } }),
     );
-    expect(screen.getByRole("heading", { name: t("magicLinkVerify.title") })).toBeInTheDocument();
   });
 
-  it("verify page without session, token or error goes back to login", async () => {
+  it("verify page with no session and no pending sign-in says the link signed nobody in", async () => {
+    mockFetch({ "GET /api/auth/pending-sign-in": { pending: null } });
+    renderApp("/magic-link/verify?next=/account/profile");
+    expect(
+      await screen.findByRole("heading", { name: t("magicLinkVerify.failedTitle") }),
+    ).toBeInTheDocument();
+  });
+
+  it("verify page asks a 2FA user for a passkey or the password", async () => {
+    mockFetch({
+      "GET /api/auth/pending-sign-in": {
+        pending: { via: "recovery", email: "ada@example.com", factors: ["passkey", "password"] },
+      },
+    });
+    mockAuth.client.signIn.passkey.mockImplementation(async () => {
+      mockAuth.signInAs();
+      return { data: { user: { id: "u1" } }, error: null };
+    });
+    renderApp("/magic-link/verify?next=/account/passkeys");
+    expect(
+      await screen.findByRole("heading", { name: t("secondFactor.title") }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: t("secondFactor.passkey") }));
+    expect(mockAuth.client.signIn.passkey).toHaveBeenCalledWith();
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/account/passkeys"),
+    );
+  });
+
+  it("verify page completes a 2FA recovery with the password (normal OPAQUE login)", async () => {
+    mockFetch({
+      "GET /api/auth/pending-sign-in": {
+        pending: { via: "recovery", email: "ada@example.com", factors: ["passkey", "password"] },
+      },
+    });
+    mockAuth.client.signIn.opaque.mockImplementation(async () => {
+      mockAuth.signInAs();
+      return { data: { user: { id: "u1" }, redirect: false }, error: null };
+    });
+    renderApp("/magic-link/verify?next=/account/password");
+    await userEvent.type(await screen.findByLabelText(t("login.passwordLabel")), "my-password");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    expect(mockAuth.client.signIn.opaque).toHaveBeenCalledWith({
+      email: "ada@example.com",
+      password: "my-password",
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/account/password"),
+    );
+  });
+
+  it("verify page shows a wrong password in the second step", async () => {
+    mockFetch({
+      "GET /api/auth/pending-sign-in": {
+        pending: { via: "recovery", email: "ada@example.com", factors: ["password"] },
+      },
+    });
+    mockAuth.client.signIn.opaque.mockResolvedValue({
+      data: null,
+      error: { code: "INVALID_EMAIL_OR_PASSWORD", status: 401, message: "no" },
+    });
     renderApp("/magic-link/verify");
-    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/login"));
+    expect(
+      screen.queryByRole("button", { name: t("secondFactor.passkey") }),
+    ).not.toBeInTheDocument();
+    await userEvent.type(await screen.findByLabelText(t("login.passwordLabel")), "nope");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    expect(await screen.findByText(t("login.invalidCredentials"))).toBeInTheDocument();
   });
 
   it("resend calls the client again once the cooldown has passed", async () => {

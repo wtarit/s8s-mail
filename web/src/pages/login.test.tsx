@@ -36,7 +36,7 @@ describe("LoginPage", () => {
     await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
     await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "correct horse");
     await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
-    expect(mockAuth.client.signIn.email).toHaveBeenCalledWith({
+    expect(mockAuth.client.signIn.opaque).toHaveBeenCalledWith({
       email: "ada@example.com",
       password: "correct horse",
     });
@@ -56,7 +56,7 @@ describe("LoginPage", () => {
   });
 
   it("shows an inline error for wrong credentials and stays on the page", async () => {
-    mockAuth.client.signIn.email.mockResolvedValue({
+    mockAuth.client.signIn.opaque.mockResolvedValue({
       data: null,
       error: {
         code: "INVALID_EMAIL_OR_PASSWORD",
@@ -77,7 +77,7 @@ describe("LoginPage", () => {
     await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
     expect(await screen.findByText(t("login.emailRequired"))).toBeInTheDocument();
     expect(screen.getByText(t("login.passwordRequired"))).toBeInTheDocument();
-    expect(mockAuth.client.signIn.email).not.toHaveBeenCalled();
+    expect(mockAuth.client.signIn.opaque).not.toHaveBeenCalled();
   });
 
   it("signs in with a passkey", async () => {
@@ -148,7 +148,7 @@ describe("LoginPage", () => {
   });
 
   it("does not navigate itself when Better Auth continues an OAuth request", async () => {
-    mockAuth.client.signIn.email.mockResolvedValue({
+    mockAuth.client.signIn.opaque.mockResolvedValue({
       data: { redirect: true, url: "https://webmail.example.com/cb?code=1" },
       error: null,
     });
@@ -157,8 +157,105 @@ describe("LoginPage", () => {
     await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
     await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "pw");
     await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
-    await waitFor(() => expect(mockAuth.client.signIn.email).toHaveBeenCalled());
+    await waitFor(() => expect(mockAuth.client.signIn.opaque).toHaveBeenCalled());
     expect(screen.getByTestId("location")).toHaveTextContent("/login?client_id=webmail");
+  });
+
+  it("asks a 2FA user for the passkey after the password and follows ?next", async () => {
+    mockAuth.client.signIn.opaque.mockResolvedValue({
+      data: { passkeyRequired: true, redirect: false },
+      error: null,
+    });
+    mockAuth.client.signIn.passkey.mockImplementation(async () => {
+      mockAuth.signInAs();
+      return { data: { user: { id: "u1" } }, error: null };
+    });
+    renderApp("/login?next=/account/sessions");
+    await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
+    await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "correct horse");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+
+    expect(
+      await screen.findByRole("heading", { name: t("secondFactor.title") }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ada@example.com")).toBeInTheDocument();
+    // only the passkey can finish a password-first sign-in
+    expect(screen.queryByLabelText(t("login.passwordLabel"))).not.toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/login");
+
+    await userEvent.click(screen.getByRole("button", { name: t("secondFactor.passkey") }));
+    expect(mockAuth.client.signIn.passkey).toHaveBeenCalledWith();
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/account/sessions"),
+    );
+  });
+
+  it("keeps the OAuth continuation in the passkey second step", async () => {
+    mockAuth.client.signIn.opaque.mockResolvedValue({
+      data: { passkeyRequired: true, redirect: false },
+      error: null,
+    });
+    mockAuth.client.signIn.passkey.mockResolvedValue({
+      data: { redirect: true, url: "https://webmail.example.com/cb?code=1" },
+      error: null,
+    });
+    renderApp(`/login?${SIGNED_QUERY}`);
+    await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
+    await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "pw");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    await userEvent.click(await screen.findByRole("button", { name: t("secondFactor.passkey") }));
+    await waitFor(() => expect(mockAuth.client.signIn.passkey).toHaveBeenCalled());
+    // the client's OAuth plugin follows the redirect; the page does not navigate itself
+    expect(screen.getByTestId("location")).toHaveTextContent("/login?client_id=webmail");
+  });
+
+  it("shows an error and stays on the second step when the passkey fails", async () => {
+    mockAuth.client.signIn.opaque.mockResolvedValue({
+      data: { passkeyRequired: true, redirect: false },
+      error: null,
+    });
+    mockAuth.client.signIn.passkey.mockResolvedValue({
+      data: null,
+      error: { code: "AUTH_CANCELLED", message: "Cancelled", status: 400 },
+    });
+    renderApp("/login");
+    await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
+    await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "pw");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    await userEvent.click(await screen.findByRole("button", { name: t("secondFactor.passkey") }));
+    expect(await screen.findByText("Cancelled")).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/login");
+  });
+
+  it("goes back to the sign-in form from the second step", async () => {
+    mockAuth.client.signIn.opaque.mockResolvedValue({
+      data: { passkeyRequired: true, redirect: false },
+      error: null,
+    });
+    renderApp("/login");
+    await userEvent.type(screen.getByLabelText(t("login.emailLabel")), "ada@example.com");
+    await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "pw");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    await userEvent.click(await screen.findByRole("button", { name: t("secondFactor.back") }));
+    expect(screen.getByRole("heading", { name: t("login.title") })).toBeInTheDocument();
+  });
+
+  it("resumes a pending sign-in with the factors the server still accepts", async () => {
+    mockFetch({
+      "GET /api/auth/pending-sign-in": {
+        pending: { via: "recovery", email: "ada@example.com", factors: ["passkey", "password"] },
+      },
+    });
+    renderApp("/login");
+    expect(await screen.findByText(t("secondFactor.bodyRecovery"))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t("secondFactor.passkey") })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(t("login.passwordLabel")), "my-password");
+    await userEvent.click(screen.getByRole("button", { name: t("login.submit") }));
+    // a normal OPAQUE login with the email from the pending response
+    expect(mockAuth.client.signIn.opaque).toHaveBeenCalledWith({
+      email: "ada@example.com",
+      password: "my-password",
+    });
   });
 
   it("redirects away when already signed in", async () => {

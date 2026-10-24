@@ -3,16 +3,27 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router";
 import { FormError } from "@/components/form-error";
 import { LoadingButton } from "@/components/loading-button";
+import { SecondFactorStep } from "@/components/second-factor-step";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { authErrorMessage, getAuthClient, useAuthSession } from "@/lib/auth-client";
+import { usePendingSignIn, type PendingSignIn } from "@/lib/pending-sign-in";
 import { hasSignedOAuthQuery, oauthResumeUrl, safeNextPath } from "@/lib/navigation";
 import { useT } from "@/i18n";
 
 type Busy = "passkey" | "password" | "magic" | null;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** True when the password was right but a passkey must finish the sign-in. */
+function isPasskeyRequired(data: unknown): boolean {
+  return (
+    !!data &&
+    typeof data === "object" &&
+    (data as { passkeyRequired?: unknown }).passkeyRequired === true
+  );
+}
 
 /** True when Better Auth answered with an OAuth continuation; its client plugin follows `url`. */
 function isOAuthRedirect(data: unknown): boolean {
@@ -36,6 +47,10 @@ export function LoginPage() {
   const [emailError, setEmailError] = useState<string>();
   const [passwordError, setPasswordError] = useState<string>();
   const redirecting = useRef(false);
+  // The second step of a 2FA user: after a correct password here, or a recovery link elsewhere.
+  const [secondStep, setSecondStep] = useState<PendingSignIn | null>(null);
+  const [startedOver, setStartedOver] = useState(false);
+  const found = usePendingSignIn(true);
 
   const signedOAuth = hasSignedOAuthQuery(location.search);
   const next = safeNextPath(params.get("next"));
@@ -116,13 +131,19 @@ export function LoginPage() {
 
     setBusy("password");
     try {
-      const result = await client.signIn.email({ email: email.trim(), password });
+      const result = await client.signIn.opaque({ email: email.trim(), password });
       if (result.error) {
         setError(
           result.error.code === "INVALID_EMAIL_OR_PASSWORD" || result.error.status === 401
             ? t("login.invalidCredentials")
             : authErrorMessage(result.error, t("login.signInFailed")),
         );
+        setBusy(null);
+        return;
+      }
+      if (isPasskeyRequired(result.data)) {
+        setSecondStep({ via: "password", email: email.trim(), factors: ["passkey"] });
+        setPassword("");
         setBusy(null);
         return;
       }
@@ -161,6 +182,23 @@ export function LoginPage() {
 
   // Already signed in and not mid-authorization: nothing to do here.
   if (session && !signedOAuth && !busy) return <Navigate to={next} replace />;
+
+  const second = secondStep ?? (startedOver ? null : found.pending);
+  if (second) {
+    return (
+      <SecondFactorStep
+        key={second.email}
+        via={second.via}
+        email={second.email}
+        factors={second.factors}
+        onSignedIn={finish}
+        onBack={() => {
+          setSecondStep(null);
+          setStartedOver(true);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

@@ -27,6 +27,13 @@ const isoDate = z.iso.datetime();
 
 // ---------------------------------------------------------------- /api/me
 
+/** The two sign-in factors a user can have. The recovery link is never a factor of its own. */
+export const factorName = z.enum(["password", "passkey"]);
+export type FactorName = z.infer<typeof factorName>;
+
+/** When this session last verified a factor, and whether that is still inside the 5-minute window. */
+const factorFreshness = z.object({ verifiedAt: isoDate.nullable(), fresh: z.boolean() });
+
 export const meResponse = z.object({
   user: z.object({
     id: z.string(),
@@ -37,6 +44,24 @@ export const meResponse = z.object({
     /** Masked external recovery address, e.g. "a•••@gmail.com"; null if unset. */
     recoveryEmailMasked: z.string().nullable(),
     hasPassword: z.boolean(),
+    passkeyCount: z.number().int().nonnegative(),
+    /** Per-factor freshness for THIS session, evaluated when the response was built. */
+    factors: z.object({
+      password: factorFreshness,
+      passkey: factorFreshness,
+      /** The recovery (magic) link that started this session, if any. */
+      recovery: factorFreshness,
+    }),
+    /** What an account change (password, passkeys, app passwords) needs from this session now. */
+    accountChange: z.object({
+      allowed: z.boolean(),
+      /** Factors still to verify. Empty when `allowed`. */
+      stale: z.array(factorName),
+      /** True when verifying any ONE of `stale` is enough (the recovery link covers the rest). */
+      oneOf: z.boolean(),
+      /** Changing the password must prove the current one (false for a first password or recovery). */
+      currentPasswordRequired: z.boolean(),
+    }),
   }),
   accounts: z.array(
     z.object({
@@ -48,6 +73,33 @@ export const meResponse = z.object({
   ),
 });
 export type MeResponse = z.infer<typeof meResponse>;
+
+/**
+ * Body of the 403 that every account change answers when factors are stale
+ * (`code: "REAUTHENTICATION_REQUIRED"`), so the SPA can ask for just those.
+ */
+export const reauthenticationRequired = z.object({
+  code: z.literal("REAUTHENTICATION_REQUIRED"),
+  message: z.string(),
+  stale: z.array(factorName),
+  oneOf: z.boolean(),
+});
+export type ReauthenticationRequired = z.infer<typeof reauthenticationRequired>;
+
+/**
+ * GET /api/auth/pending-sign-in: a half-finished sign-in or recovery of a 2FA user (no session
+ * yet). `factors` lists what can still complete it; any ONE of them is enough.
+ */
+export const pendingSignInResponse = z.object({
+  pending: z
+    .object({
+      via: z.enum(["password", "recovery"]),
+      email: z.string(),
+      factors: z.array(factorName).min(1),
+    })
+    .nullable(),
+});
+export type PendingSignInResponse = z.infer<typeof pendingSignInResponse>;
 
 // ---------------------------------------------------------------- invites
 
@@ -66,14 +118,11 @@ export const inviteInfoResponse = z.object({
 });
 export type InviteInfoResponse = z.infer<typeof inviteInfoResponse>;
 
-/** POST /api/invite/:token/accept -> sets the Better Auth session cookie. */
-export const inviteAcceptResponse = z.object({ ok: z.literal(true), userId: z.string() });
-
-/** POST /api/account/password  (user without a password sets one; with one, must pass current). */
-export const setPasswordRequest = z.object({
-  currentPassword: z.string().optional(),
-  newPassword: z.string().min(10).max(256),
-});
+/**
+ * POST /api/invite/:token/session -> sets an enrollment-only session cookie. It does NOT use the
+ * invite up: that happens when the first factor is saved. It can be called again later.
+ */
+export const inviteSessionResponse = z.object({ ok: z.literal(true), userId: z.string() });
 
 // ---------------------------------------------------------------- admin: users
 

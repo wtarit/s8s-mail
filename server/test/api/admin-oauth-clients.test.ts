@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { bootstrapAdmin, request, resetDb, type Session, type Json } from "../helpers";
+import { request, resetDb, type Session, type Json } from "../helpers";
+import { bootstrapAdmin } from "../helpers/accounts";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 

@@ -111,6 +111,28 @@ export const en = {
   "magicLinkVerify.failedBody": "Something went wrong while checking the link. Request a new one.",
   "magicLinkVerify.backToLogin": "Back to sign in",
 
+  // --- Second step of a 2FA sign-in (after a password or a recovery link)
+  "secondFactor.title": "One more step",
+  "secondFactor.bodyPassword":
+    "Your password was correct. This account also uses a passkey: use it to finish signing in.",
+  "secondFactor.bodyRecovery":
+    "Your recovery link was accepted. Finish signing in with your passkey or your password.",
+  "secondFactor.passkey": "Use your passkey",
+  "secondFactor.back": "Start over",
+
+  // --- Step-up prompt for account changes
+  "stepUp.title": "Confirm it’s you",
+  "stepUp.body": "For this change, verify the following. Your session stays signed in.",
+  "stepUp.bodyOne": "For this change, verify either one of these. Your session stays signed in.",
+  "stepUp.password": "Password",
+  "stepUp.passwordRequired": "Enter your password.",
+  "stepUp.wrongPassword": "Incorrect password.",
+  "stepUp.verifyPassword": "Verify password",
+  "stepUp.verifyPasskey": "Verify with passkey",
+  "stepUp.passwordVerified": "Password verified.",
+  "stepUp.passkeyVerified": "Passkey verified.",
+  "stepUp.passkeyFailed": "Passkey verification did not complete. Try again.",
+
   // --- Invite
   "invite.title": "Welcome",
   "invite.welcome": "Welcome, {name}",
@@ -128,6 +150,11 @@ export const en = {
     "The link may be incomplete. Check it, or ask your admin for a new invite link.",
   "invite.toLogin": "Go to sign in",
   "invite.secureTitle": "Secure your account",
+  "invite.leaveHint":
+    "You can close this page and come back with the same link until it expires. Nothing is used up until you save your first sign-in method.",
+  "invite.secondTitle": "Add a second sign-in method",
+  "invite.secondBody":
+    "Your account is ready. Adding the other method as well makes it more secure; you can also do it later in your account settings.",
   "invite.secureBody":
     "Add a passkey, set a password, or both. A passkey is the quickest and safest way to sign in.",
   "invite.passkeyHeading": "Create a passkey",
@@ -139,7 +166,7 @@ export const en = {
   "invite.doneTitle": "You're all set",
   "invite.doneBody": "Your account is ready.",
   "invite.doneSkipped":
-    "Your account is ready. You can add a passkey or password later in your account settings.",
+    "Your account is ready. You can add another sign-in method later in your account settings.",
   "invite.continueMail": "Continue to mail",
   "invite.goAccount": "Go to account",
   "invite.linkLabel": "Invite link",
@@ -186,8 +213,15 @@ export const en = {
   "password.descriptionSet":
     "You have no password yet. Set one to sign in with email and password.",
   "password.descriptionChange": "Change the password you use to sign in.",
+  "password.descriptionRecovery":
+    "You signed in with a recovery link, so you can set a new password without the old one.",
+  "opaque.unavailable":
+    "Password sign-in is unavailable in this browser. Try a passkey or recovery link.",
+  "opaque.timeout": "Password verification took too long. Please try again.",
+  "opaque.failed": "Could not verify your password. Please try again.",
   "password.current": "Current password",
   "password.currentRequired": "Enter your current password.",
+  "password.currentWrong": "That is not your current password.",
   "password.new": "New password",
   "password.confirm": "Confirm new password",
   "password.hint": "At least {min} characters.",

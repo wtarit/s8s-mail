@@ -98,7 +98,7 @@ export async function authorize(session: Session, resource?: string) {
   });
   const authz = await request(`/api/auth/oauth2/authorize?${q}`, { cookie: session.cookie });
   expect(authz.status).toBe(302);
-  return { location: new URL(authz.headers.get("location")!), verifier };
+  return { location: new URL(authz.headers.get("location")!, BASE), verifier };
 }
 
 /** Authorization-code + PKCE flow against the Bulwark client; returns the token response. */

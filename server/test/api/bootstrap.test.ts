@@ -1,7 +1,8 @@
 import { apiError } from "@s8s/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
-import { BOOTSTRAP_TOKEN, acceptInvite, request, resetDb, type Json } from "../helpers";
+import { BOOTSTRAP_TOKEN, request, resetDb, type Json } from "../helpers";
+import { acceptInvite } from "../helpers/accounts";
 import { REDIRECT, authorize } from "../helpers/auth-jmap";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));

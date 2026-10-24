@@ -7,12 +7,20 @@ import { t } from "@/i18n";
 export class ApiRequestError extends Error {
   readonly status: number;
   readonly code: string;
+  /** Extra fields of the error body (e.g. `stale` and `oneOf` of REAUTHENTICATION_REQUIRED). */
+  readonly details: Readonly<Record<string, unknown>>;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -88,7 +96,7 @@ export function errorMessage(error: unknown): string {
 
 interface AuthResult<T> {
   data: T | null;
-  error: { message?: string; code?: string; status?: number } | null;
+  error: ({ message?: string; code?: string; status?: number } & Record<string, unknown>) | null;
 }
 
 /** Unwrap a Better Auth client `{data, error}` result, throwing an ApiRequestError on failure. */
@@ -104,6 +112,7 @@ export async function unwrapAuth<T>(result: Promise<AuthResult<T>>): Promise<T> 
       r.error?.status ?? 0,
       r.error?.code ?? "auth_error",
       r.error?.message?.trim() || t("error.generic"),
+      r.error ?? {},
     );
   }
   return r.data;

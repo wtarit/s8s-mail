@@ -1,32 +1,42 @@
 import { useState, type FormEvent } from "react";
 import { FormError } from "@/components/form-error";
+import { useStepUp } from "@/components/step-up";
 import { LoadingButton } from "@/components/loading-button";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { apiVoid, errorMessage } from "@/lib/api";
+import { ApiRequestError, errorMessage, unwrapAuth } from "@/lib/api";
+import { getAuthClient } from "@/lib/auth-client";
+import { isStepUpCancelled } from "@/lib/step-up";
 import { useT } from "@/i18n";
 
 export const MIN_PASSWORD_LENGTH = 10;
 
 interface PasswordFormProps {
-  /** Ask for the current password first (the account already has one). */
+  /**
+   * Ask for the current password first: true unless `me.user.accountChange.currentPasswordRequired`
+   * is false (first password, recovery, invite enrollment).
+   */
   requireCurrent: boolean;
   submitLabel: string;
   onDone: () => void | Promise<void>;
+  /** Called with a failed save first; return true when the caller handled it. */
+  onFailure?: (error: ApiRequestError) => boolean;
   /** Auth pages use taller controls (design-system.md section 2). */
   large?: boolean;
   variant?: "default" | "outline";
 }
 
-/** Set or change the password through `POST /api/account/password`. */
+/** Set or change the password with a browser-side OPAQUE exchange. */
 export function PasswordForm({
   requireCurrent,
   submitLabel,
   onDone,
+  onFailure,
   large,
   variant = "default",
 }: PasswordFormProps) {
   const t = useT();
+  const stepUp = useStepUp();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -49,16 +59,31 @@ export function PasswordForm({
 
     setBusy(true);
     try {
-      await apiVoid("/api/account/password", {
-        method: "POST",
-        body: { newPassword: next, ...(requireCurrent ? { currentPassword: current } : {}) },
-      });
+      // The current password doubles as the password step-up, so only other factors are asked.
+      await stepUp.run(
+        () =>
+          unwrapAuth(
+            getAuthClient().opaque.setPassword({
+              newPassword: next,
+              ...(requireCurrent ? { currentPassword: current } : {}),
+            }),
+          ),
+        { provides: requireCurrent ? ["password"] : [] },
+      );
       setCurrent("");
       setNext("");
       setConfirm("");
       await onDone();
     } catch (err) {
-      setFormError(errorMessage(err));
+      if (isStepUpCancelled(err)) {
+        // the user backed out of the step-up prompt: nothing to report
+      } else if (err instanceof ApiRequestError && onFailure?.(err)) {
+        // handled by the caller
+      } else if (err instanceof ApiRequestError && err.code === "INVALID_EMAIL_OR_PASSWORD") {
+        setErrors({ current: t("password.currentWrong") });
+      } else {
+        setFormError(errorMessage(err));
+      }
     }
     setBusy(false);
   }

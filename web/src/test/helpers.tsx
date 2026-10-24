@@ -1,4 +1,4 @@
-import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig } from "@s8s/shared";
+import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig, type MeResponse } from "@s8s/shared";
 import { render } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { vi } from "vitest";
@@ -48,6 +48,13 @@ export const ME_ADMIN = {
     role: "admin",
     recoveryEmailMasked: "a•••@example.org",
     hasPassword: true,
+    passkeyCount: 0,
+    factors: {
+      password: { verifiedAt: "2026-10-22T10:00:00.000Z", fresh: true },
+      passkey: { verifiedAt: null, fresh: false },
+      recovery: { verifiedAt: null, fresh: false },
+    },
+    accountChange: { allowed: true, stale: [], oneOf: false, currentPasswordRequired: true },
   },
   accounts: [
     {
@@ -58,6 +65,17 @@ export const ME_ADMIN = {
     },
   ],
 };
+
+/** `ME_USER` with `accountChange` overridden (e.g. stale factors, or no current password needed). */
+export function meWithAccountChange(accountChange: Partial<MeResponse["user"]["accountChange"]>) {
+  return {
+    ...ME_USER,
+    user: {
+      ...ME_USER.user,
+      accountChange: { ...ME_USER.user.accountChange, ...accountChange },
+    },
+  };
+}
 
 export const ME_USER = { ...ME_ADMIN, user: { ...ME_ADMIN.user, role: "user" } };
 

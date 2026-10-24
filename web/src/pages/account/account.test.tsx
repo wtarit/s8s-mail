@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { t } from "@/i18n";
 import { mockAuth } from "@/test/auth-mock";
-import { ME_USER, mockFetch, renderApp } from "@/test/helpers";
+import { ME_USER, meWithAccountChange, mockFetch, renderApp } from "@/test/helpers";
 
 vi.mock("@/lib/auth-client", () => import("@/test/auth-mock").then((m) => m.authClientModule()));
 
@@ -213,7 +213,7 @@ describe("Account / Password", () => {
   });
 
   it("asks for the current password when one is set", async () => {
-    const { calls } = mockFetch({ "GET /api/me": ME_USER, "POST /api/account/password": {} });
+    mockFetch({ "GET /api/me": ME_USER });
     const user = userEvent.setup();
     renderApp("/account/password");
     await user.type(await screen.findByLabelText(t("password.current")), "old-password");
@@ -221,20 +221,66 @@ describe("Account / Password", () => {
     await user.type(screen.getByLabelText(t("password.confirm")), "brand-new-password");
     await user.click(screen.getByRole("button", { name: t("password.change") }));
     await waitFor(() =>
-      expect(calls.find((c) => c.path === "/api/account/password")?.body).toEqual({
+      expect(mockAuth.client.opaque.setPassword).toHaveBeenCalledWith({
         currentPassword: "old-password",
         newPassword: "brand-new-password",
       }),
     );
   });
 
-  it("does not ask for a current password when none exists yet", async () => {
+  it("allows password recovery without the current password", async () => {
+    mockFetch({ "GET /api/me": meWithAccountChange({ currentPasswordRequired: false }) });
+    renderApp("/account/password");
+    expect(await screen.findByText(t("password.descriptionRecovery"))).toBeInTheDocument();
+    expect(screen.queryByLabelText(t("password.current"))).not.toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(t("password.new")), "recovered-password");
+    await userEvent.type(screen.getByLabelText(t("password.confirm")), "recovered-password");
+    await userEvent.click(screen.getByRole("button", { name: t("password.change") }));
+    await waitFor(() =>
+      expect(mockAuth.client.opaque.setPassword).toHaveBeenCalledWith({
+        newPassword: "recovered-password",
+      }),
+    );
+  });
+
+  it("does not ask for a current password for a first password", async () => {
     mockFetch({
-      "GET /api/me": { ...ME_USER, user: { ...ME_USER.user, hasPassword: false } },
+      "GET /api/me": {
+        ...meWithAccountChange({ currentPasswordRequired: false }),
+        user: {
+          ...meWithAccountChange({ currentPasswordRequired: false }).user,
+          hasPassword: false,
+        },
+      },
     });
     renderApp("/account/password");
     expect(await screen.findByLabelText(t("password.new"))).toBeInTheDocument();
+    expect(screen.getByText(t("password.descriptionSet"))).toBeInTheDocument();
     expect(screen.queryByLabelText(t("password.current"))).not.toBeInTheDocument();
+  });
+
+  it("requires the current password before changing an existing one", async () => {
+    mockFetch({ "GET /api/me": ME_USER });
+    renderApp("/account/password");
+    await userEvent.type(await screen.findByLabelText(t("password.new")), "brand-new-password");
+    await userEvent.type(screen.getByLabelText(t("password.confirm")), "brand-new-password");
+    await userEvent.click(screen.getByRole("button", { name: t("password.change") }));
+    expect(await screen.findByText(t("password.currentRequired"))).toBeInTheDocument();
+    expect(mockAuth.client.opaque.setPassword).not.toHaveBeenCalled();
+  });
+
+  it("flags a wrong current password on its field", async () => {
+    mockFetch({ "GET /api/me": ME_USER });
+    mockAuth.client.opaque.setPassword.mockResolvedValue({
+      data: null,
+      error: { code: "INVALID_EMAIL_OR_PASSWORD", message: "Incorrect", status: 401 },
+    });
+    renderApp("/account/password");
+    await userEvent.type(await screen.findByLabelText(t("password.current")), "wrong");
+    await userEvent.type(screen.getByLabelText(t("password.new")), "brand-new-password");
+    await userEvent.type(screen.getByLabelText(t("password.confirm")), "brand-new-password");
+    await userEvent.click(screen.getByRole("button", { name: t("password.change") }));
+    expect(await screen.findByText(t("password.currentWrong"))).toBeInTheDocument();
   });
 });
 

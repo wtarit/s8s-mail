@@ -1,8 +1,10 @@
 import { IconAlertCircle, IconLoader2 } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, Navigate, useSearchParams } from "react-router";
+import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
+import { SecondFactorStep } from "@/components/second-factor-step";
 import { Button } from "@/components/ui/button";
 import { getAuthClient, useAuthSession } from "@/lib/auth-client";
+import { usePendingSignIn } from "@/lib/pending-sign-in";
 import { isOAuthResumeUrl, safeNextPath } from "@/lib/navigation";
 import { useT, type MessageKey } from "@/i18n";
 
@@ -23,14 +25,18 @@ function errorKey(code: string): { title: MessageKey; body: MessageKey } {
 /**
  * Landing page for the magic-link flow. Better Auth verifies the token server-side and
  * redirects here: with a session cookie on success, or with `?error=CODE` on failure.
+ * A 2FA user arrives WITHOUT a session but with a pending-recovery cookie: the link is then only
+ * the first half, and the page asks for a passkey or the password (GET /pending-sign-in).
  * If a raw `?token=` arrives instead, it is redeemed through the client.
  */
 export function MagicLinkVerifyPage() {
   const t = useT();
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const client = getAuthClient();
   const { data: session, isPending } = useAuthSession();
   const [redeemFailed, setRedeemFailed] = useState(false);
+  const [redeemOk, setRedeemOk] = useState(false);
   const redeemed = useRef(false);
 
   const errorCode = params.get("error");
@@ -38,6 +44,10 @@ export function MagicLinkVerifyPage() {
   const next = params.get("next");
   // The only absolute target we follow is our own OAuth authorize URL.
   const resume = next && isOAuthResumeUrl(next) ? next : null;
+
+  // Nobody is signed in yet: a 2FA user may still have a pending second step to finish.
+  const lookup = !isPending && !session && (!token || redeemOk) && !errorCode;
+  const pendingSignIn = usePendingSignIn(lookup);
 
   useEffect(() => {
     if (session && resume && !errorCode) window.location.assign(resume);
@@ -50,14 +60,18 @@ export function MagicLinkVerifyPage() {
       try {
         const result = await client.magicLink.verify({ query: { token } });
         if (result.error) setRedeemFailed(true);
+        else setRedeemOk(true);
       } catch {
         setRedeemFailed(true);
       }
     })();
   }, [token, errorCode, client]);
 
-  if (errorCode || redeemFailed) {
-    const { title, body } = errorKey(errorCode ?? "INVALID_TOKEN");
+  const secondStep = lookup ? pendingSignIn.pending : null;
+  const nobodySignedIn = lookup && !pendingSignIn.loading && !secondStep;
+  if (errorCode || redeemFailed || nobodySignedIn) {
+    // Without a session or a pending second step the link signed nobody in (also: no factors).
+    const { title, body } = errorKey(errorCode ?? (redeemFailed ? "INVALID_TOKEN" : "FAILED"));
     return (
       <div className="flex flex-col gap-6">
         <div className="flex flex-col items-start gap-3">
@@ -74,9 +88,16 @@ export function MagicLinkVerifyPage() {
 
   if (session && !resume) return <Navigate to={safeNextPath(next)} replace />;
 
-  if (!isPending && !session && !token) {
-    // Opened without a session, error or token: nothing to redeem.
-    return <Navigate to="/login" replace />;
+  if (secondStep) {
+    const { via, email, factors } = secondStep;
+    return (
+      <SecondFactorStep
+        via={via}
+        email={email}
+        factors={factors}
+        onSignedIn={() => (resume ? window.location.assign(resume) : navigate(safeNextPath(next)))}
+      />
+    );
   }
 
   return (

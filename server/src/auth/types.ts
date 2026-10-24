@@ -16,6 +16,14 @@ export interface SessionUser {
   role: Role;
 }
 
+/** The signed-in session as the SPA routes see it (set by `requireSession`). */
+export interface SessionInfo {
+  id: string;
+  impersonated: boolean;
+  /** Epoch ms of the last verification of each factor in this session. */
+  stamps: { password: number | null; passkey: number | null; recovery: number | null };
+}
+
 /** Hono app typing shared by all of our routes. */
 export type AppEnv = {
   Bindings: Env;
@@ -24,5 +32,7 @@ export type AppEnv = {
     principal: Principal;
     /** Set by `requireSession` / `requireAdmin`. */
     sessionUser: SessionUser;
+    sessionId: string;
+    session: SessionInfo;
   };
 };

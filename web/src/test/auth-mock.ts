@@ -14,7 +14,8 @@ const ok = (data: unknown = {}): AuthResult => ({ data, error: null });
 export const mockAuth = {
   session: { data: null as unknown, isPending: false },
   client: {
-    signIn: { email: vi.fn(), passkey: vi.fn(), magicLink: vi.fn() },
+    signIn: { opaque: vi.fn(), email: vi.fn(), passkey: vi.fn(), magicLink: vi.fn() },
+    opaque: { setPassword: vi.fn(), stepUp: vi.fn() },
     signOut: vi.fn(),
     listSessions: vi.fn(),
     revokeSession: vi.fn(),
@@ -35,6 +36,9 @@ export const mockAuth = {
     const c = mockAuth.client;
     const fns = [
       c.signIn.email,
+      c.signIn.opaque,
+      c.opaque.setPassword,
+      c.opaque.stepUp,
       c.signIn.passkey,
       c.signIn.magicLink,
       c.signOut,

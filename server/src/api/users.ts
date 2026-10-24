@@ -1,5 +1,5 @@
 import type { AdminUser, Invite, Role } from "@s8s/shared";
-import { and, asc, count, eq, gt, inArray, isNotNull, isNull, max, sql } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray, isNull, max, sql } from "drizzle-orm";
 import { getAuth } from "../auth";
 import { runInBackground } from "../auth/request-context";
 import { sendSystemMailLazy } from "../auth/system-mail";
@@ -61,13 +61,26 @@ export interface CreatedInvite extends Invite {
   token: string;
 }
 
-/** Revokes the user's unused invites and creates a fresh one. */
+/**
+ * Revokes the user's unused invites (and the enrollment sessions opened from them) and creates a
+ * fresh one. It does not touch the user's existing factors: they are reset when the new invite's
+ * first factor is saved.
+ */
 export async function createInvite(env: Env, userId: string): Promise<CreatedInvite> {
   const db = getDb(env);
   const token = randomToken(32);
   const now = new Date();
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
   await db.batch([
+    db.delete(schema.session).where(
+      inArray(
+        schema.session.inviteId,
+        db
+          .select({ id: schema.invite.id })
+          .from(schema.invite)
+          .where(and(eq(schema.invite.userId, userId), isNull(schema.invite.usedAt))),
+      ),
+    ),
     db
       .delete(schema.invite)
       .where(and(eq(schema.invite.userId, userId), isNull(schema.invite.usedAt))),
@@ -126,15 +139,9 @@ export async function loadAdminUsers(db: Db, ids?: string[]): Promise<AdminUser[
       .from(schema.passkey)
       .where(byId(schema.passkey.userId)),
     db
-      .selectDistinct({ userId: schema.account.userId })
-      .from(schema.account)
-      .where(
-        and(
-          eq(schema.account.providerId, "credential"),
-          isNotNull(schema.account.password),
-          byId(schema.account.userId),
-        ),
-      ),
+      .selectDistinct({ userId: schema.opaqueCredential.userId })
+      .from(schema.opaqueCredential)
+      .where(byId(schema.opaqueCredential.userId)),
     db
       .selectDistinct({ userId: schema.invite.userId })
       .from(schema.invite)

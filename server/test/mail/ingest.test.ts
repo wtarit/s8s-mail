@@ -60,10 +60,11 @@ describe("email() handler", () => {
 
   it("rejects an unknown recipient and stores nothing", async () => {
     const { app, accountId } = await setupAccount("ing-unknown", ["known@example.com"]);
-    const before = (await env.BLOBS.list()).objects.length;
+    // Other accounts' background parse alarms may write R2 objects during this test.
+    const before = await r2Keys(accountId);
     const { setReject } = await deliver("nobody@example.com", buildRaw());
     expect(setReject).toHaveBeenCalledWith("5.1.1 Recipient address rejected");
-    expect((await env.BLOBS.list()).objects.length).toBe(before);
+    expect(await r2Keys(accountId)).toEqual(before);
     expect(await searchIds(app, accountId)).toEqual([]);
   });
 

@@ -1,4 +1,4 @@
-import { inviteAcceptResponse, inviteInfoResponse, type InviteInfoResponse } from "@s8s/shared";
+import { inviteInfoResponse, inviteSessionResponse, type InviteInfoResponse } from "@s8s/shared";
 import { IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -9,6 +9,7 @@ import { FormError } from "@/components/form-error";
 import { LoadError } from "@/components/load-error";
 import { LoadingButton } from "@/components/loading-button";
 import { PasswordForm } from "@/components/password-form";
+import { StepUpProvider } from "@/components/step-up";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRuntimeConfig } from "@/config/runtime-config";
@@ -24,7 +25,25 @@ type Phase =
   | { kind: "secure"; info: InviteInfoResponse }
   | { kind: "done"; info: InviteInfoResponse };
 
+type Unavailable = Extract<Phase, { kind: "unavailable" }>["reason"];
+
+/** Saving the first factor answers INVITE_USED (409) or INVITE_UNAVAILABLE (410) for a dead invite. */
+const DEAD_INVITE: Record<string, Unavailable | undefined> = {
+  INVITE_USED: "used",
+  INVITE_UNAVAILABLE: "expired",
+};
+
 export function InvitePage() {
+  // Step-up has no session to work on until the first factor is saved, but then it can be needed
+  // (the optional second factor, if the 5-minute window has run out).
+  return (
+    <StepUpProvider>
+      <Invite />
+    </StepUpProvider>
+  );
+}
+
+function Invite() {
   const t = useT();
   const { token = "" } = useParams();
   const { webmailUrl, appName } = useRuntimeConfig();
@@ -33,6 +52,9 @@ export function InvitePage() {
   const [acceptError, setAcceptError] = useState<string>();
   const [passkeyAdded, setPasskeyAdded] = useState(false);
   const [passwordSet, setPasswordSet] = useState(false);
+  // The first saved factor uses the invite up; the other one is then optional.
+  const firstSaved = passkeyAdded || passwordSet;
+  const bothSaved = passkeyAdded && passwordSet;
 
   const fetchPhase = useCallback(async (): Promise<Phase> => {
     try {
@@ -63,20 +85,28 @@ export function InvitePage() {
     void fetchPhase().then(setPhase);
   }
 
+  /** A dead invite (used up or expired meanwhile) ends the flow; returns true when handled. */
+  function inviteGone(error: ApiRequestError): boolean {
+    const reason = DEAD_INVITE[error.code];
+    if (!reason) return false;
+    setPhase({ kind: "unavailable", reason });
+    return true;
+  }
+
+  /** Opening the invite only starts an enrollment session; it can be repeated until expiry. */
   async function accept(info: InviteInfoResponse) {
     setAccepting(true);
     setAcceptError(undefined);
     try {
-      await api(`/api/invite/${encodeURIComponent(token)}/accept`, inviteAcceptResponse, {
+      await api(`/api/invite/${encodeURIComponent(token)}/session`, inviteSessionResponse, {
         method: "POST",
       });
       setPhase({ kind: "secure", info });
     } catch (e) {
-      if (
-        e instanceof ApiRequestError &&
-        (e.status === 404 || e.status === 410 || e.status === 409)
-      ) {
-        setPhase({ kind: "unavailable", reason: e.status === 409 ? "used" : "invalid" });
+      const reasons: Record<number, Unavailable> = { 404: "invalid", 409: "used", 410: "expired" };
+      const reason = e instanceof ApiRequestError ? reasons[e.status] : undefined;
+      if (reason) {
+        setPhase({ kind: "unavailable", reason });
       } else {
         setAcceptError(errorMessage(e));
       }
@@ -155,7 +185,7 @@ export function InvitePage() {
           <IconCircleCheck size={32} stroke={1.5} className="text-success" aria-hidden="true" />
           <h1 className="text-2xl font-semibold">{t("invite.doneTitle")}</h1>
           <p className="text-muted-foreground text-[15px]">
-            {t(passkeyAdded || passwordSet ? "invite.doneBody" : "invite.doneSkipped")}
+            {t(bothSaved ? "invite.doneBody" : "invite.doneSkipped")}
           </p>
         </div>
         <div className="flex flex-col gap-2">
@@ -177,14 +207,19 @@ export function InvitePage() {
     );
   }
 
-  // phase.kind === "secure": the invite is accepted and we have a session.
-  const secured = passkeyAdded || passwordSet;
+  // phase.kind === "secure": an enrollment-only session. The first factor saved uses the invite
+  // up and signs the user in; the other factor is then optional.
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">{t("invite.secureTitle")}</h1>
-        <p className="text-muted-foreground text-[15px]">{t("invite.secureBody")}</p>
+        <h1 className="text-2xl font-semibold">
+          {t(firstSaved ? "invite.secondTitle" : "invite.secureTitle")}
+        </h1>
+        <p className="text-muted-foreground text-[15px]">
+          {t(firstSaved ? "invite.secondBody" : "invite.secureBody")}
+        </p>
       </div>
+      {firstSaved ? null : <Callout tone="info">{t("invite.leaveHint")}</Callout>}
 
       <section className="flex flex-col gap-3" aria-labelledby="invite-passkey-heading">
         <h2 id="invite-passkey-heading" className="text-base font-semibold">
@@ -195,6 +230,7 @@ export function InvitePage() {
         ) : (
           <AddPasskeyForm
             large
+            onFailure={inviteGone}
             onAdded={() => {
               setPasskeyAdded(true);
               toast.success(t("passkeys.added"));
@@ -215,6 +251,7 @@ export function InvitePage() {
             variant="outline"
             requireCurrent={false}
             submitLabel={t("password.set")}
+            onFailure={inviteGone}
             onDone={() => {
               setPasswordSet(true);
               toast.success(t("password.saved"));
@@ -223,14 +260,16 @@ export function InvitePage() {
         )}
       </section>
 
-      <Button
-        variant={secured ? "outline" : "ghost"}
-        size="lg"
-        className="h-11 rounded-lg text-[15px]"
-        onClick={() => setPhase({ kind: "done", info })}
-      >
-        {t(secured ? "invite.finish" : "invite.skip")}
-      </Button>
+      {firstSaved ? (
+        <Button
+          variant={bothSaved ? "default" : "ghost"}
+          size="lg"
+          className="h-11 rounded-lg text-[15px]"
+          onClick={() => setPhase({ kind: "done", info })}
+        >
+          {t(bothSaved ? "invite.finish" : "invite.skip")}
+        </Button>
+      ) : null}
     </div>
   );
 }

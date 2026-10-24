@@ -8,15 +8,24 @@ export function PasswordPage() {
   const t = useT();
   const { me, reload } = useMe();
   const hasPassword = me.user.hasPassword;
+  // First password and recovery need no current password; otherwise it is always asked.
+  const requireCurrent = me.user.accountChange.currentPasswordRequired;
+  const recovering = hasPassword && !requireCurrent;
   return (
     <>
       <PageHeader
         title={t("password.title")}
-        description={t(hasPassword ? "password.descriptionChange" : "password.descriptionSet")}
+        description={t(
+          recovering
+            ? "password.descriptionRecovery"
+            : hasPassword
+              ? "password.descriptionChange"
+              : "password.descriptionSet",
+        )}
       />
       <div className="max-w-md">
         <PasswordForm
-          requireCurrent={hasPassword}
+          requireCurrent={requireCurrent}
           submitLabel={t(hasPassword ? "password.change" : "password.set")}
           onDone={async () => {
             toast.success(t("password.saved"));

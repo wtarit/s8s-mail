@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import { api } from "./api/routes";
 import { authServerMetadata, getAuth, openIdConfig } from "./auth";
 import { runWithWaitUntil } from "./auth/request-context";
@@ -49,6 +50,13 @@ app.get("/.well-known/oauth-authorization-server/api/auth", (c) =>
 );
 
 // Better Auth: sign-in, sessions, passkeys, magic links, API keys, OAuth provider endpoints.
+for (const path of ["/api/auth/opaque/*", "/api/auth/step-up/*"]) {
+  app.use(path, bodyLimit({ maxSize: 16 * 1024 }));
+  app.use(path, async (c, next) => {
+    await next();
+    c.header("Cache-Control", "no-store");
+  });
+}
 app.on(["GET", "POST"], "/api/auth/*", async (c) => (await getAuth(c.env)).handler(c.req.raw));
 
 // Our own REST API (see shared/src/api.ts).

@@ -17,9 +17,11 @@ import {
   publicOrigin,
 } from "./config";
 import { errorFields } from "../log";
-import { inviteSession } from "./invite-session-plugin";
+import { inviteSession, passkeyRegistration } from "./enrollment";
+import { accountFactors } from "./factors";
 import { runInBackground } from "./request-context";
 import { sendSystemMailLazy } from "./system-mail";
+import { opaque } from "./opaque";
 
 /** The slice of `Env` the auth setup reads. */
 export type AuthEnv = Pick<
@@ -29,6 +31,7 @@ export type AuthEnv = Pick<
   Partial<Env> & {
     /** Origin of a separately deployed ("headless") SPA, if any. Optional. */
     SPA_ORIGIN?: string;
+    OPAQUE_SERVER_SETUP?: string;
   };
 
 /**
@@ -47,6 +50,19 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
     secret: env.BETTER_AUTH_SECRET,
     // PUBLIC_URL (bundled SPA), the webmail, and an optional separately hosted SPA.
     trustedOrigins: [origin, env.WEBMAIL_ORIGIN, env.SPA_ORIGIN].filter((o): o is string => !!o),
+    // Core plaintext-password and admin-created-user routes do not exist here (404). Passwords go
+    // through the OPAQUE plugin, users are created by our admin API.
+    disabledPaths: [
+      "/sign-in/email",
+      "/sign-up/email",
+      "/set-password",
+      "/change-password",
+      "/request-password-reset",
+      "/reset-password",
+      "/forget-password",
+      "/admin/set-user-password",
+      "/admin/create-user",
+    ],
     // Browser-facing auth errors (OAuth authorize, magic link verify) land on the SPA's /error page.
     onAPIError: { errorURL: "/error" },
     database,
@@ -66,7 +82,12 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
       window: 60,
       max: 120,
       customRules: {
-        "/sign-in/email": { window: 60, max: 10 },
+        "/opaque/login/start": { window: 60, max: 10 },
+        "/opaque/login/finish": { window: 60, max: 10 },
+        "/opaque/password/start": { window: 60, max: 5 },
+        "/opaque/password/finish": { window: 60, max: 5 },
+        "/step-up/password/start": { window: 60, max: 10 },
+        "/step-up/password/finish": { window: 60, max: 10 },
         "/sign-in/magic-link": { window: 300, max: 5 },
         "/magic-link/verify": { window: 60, max: 20 },
         "/get-session": false,
@@ -78,11 +99,26 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
 
     // Sign-up is disabled everywhere: admins create users (see src/api).
     emailAndPassword: {
-      enabled: true,
+      enabled: false,
       disableSignUp: true,
       minPasswordLength: 10,
       maxPasswordLength: 256,
-      // password hasher: Better Auth default (native node:crypto scrypt on workerd). Never PBKDF2.
+      // Passwords use the OPAQUE plugin; core plaintext-password routes are disabled.
+    },
+
+    session: {
+      // Account changes are gated by `requireAccountChange` (5-minute per-factor window), not by
+      // Better Auth's session age. 0 disables the createdAt-based check of `freshSessionMiddleware`,
+      // which the passkey endpoints and `/list-sessions` (the SPA sessions page) use.
+      freshAge: 0,
+      additionalFields: {
+        // When this session last verified each factor / came in through a recovery link.
+        passwordVerifiedAt: { type: "date", required: false, input: false },
+        passkeyVerifiedAt: { type: "date", required: false, input: false },
+        recoveryVerifiedAt: { type: "date", required: false, input: false },
+        // Set only on an enrollment-only session opened from an invite link.
+        inviteId: { type: "string", required: false, input: false },
+      },
     },
 
     user: {
@@ -123,7 +159,13 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
           }
         },
       }),
-      passkey({ rpID, rpName: appName, origin }),
+      passkey({
+        rpID,
+        rpName: appName,
+        origin,
+        // Invite enrollment saves its passkey inside the invite batch (enrollment/index.ts).
+        registration: { afterVerification: passkeyRegistration(env) },
+      }),
       apiKey({
         // App passwords for JMAP clients that use HTTP Basic.
         defaultPrefix: APP_PASSWORD_PREFIX,
@@ -135,6 +177,8 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
       // JWKS + ID-token signing for the OAuth provider. No `set-auth-jwt` header on get-session:
       // it would sign a JWT on every session lookup.
       jwt({ disableSettingJwtHeader: true }),
+      opaque(env),
+      accountFactors(env),
       oauthProvider({
         loginPage: "/login",
         consentPage: "/consent",

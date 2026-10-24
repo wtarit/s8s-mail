@@ -5,6 +5,7 @@ import { AddPasskeyForm } from "@/components/add-passkey-form";
 import { EmptyState } from "@/components/empty-state";
 import { ListSkeleton } from "@/components/list-skeleton";
 import { LoadError } from "@/components/load-error";
+import { useStepUp } from "@/components/step-up";
 import { PageHeader } from "@/components/page-header";
 import { PasskeyList, type PasskeyItem } from "@/components/passkey-list";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ export function PasskeysPage() {
   const t = useT();
   const { data, loading, error, reload } = useResource(loadPasskeys);
   const [adding, setAdding] = useState(false);
+  const stepUp = useStepUp();
 
   const addButton = (
     <Button onClick={() => setAdding(true)}>
@@ -64,7 +66,7 @@ export function PasskeysPage() {
             await reload();
           }}
           onRemove={async (id) => {
-            await unwrapAuth(getAuthClient().passkey.deletePasskey({ id }));
+            await stepUp.run(() => unwrapAuth(getAuthClient().passkey.deletePasskey({ id })));
             toast.success(t("passkeys.removed"));
             await reload();
           }}

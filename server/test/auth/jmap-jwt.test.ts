@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { resetJmapAuthCaches } from "../../src/auth/jmap-auth";
-import { BASE, acceptInvite, bootstrapAdmin, request, type Session, type Json } from "../helpers";
+import { BASE, request, type Session, type Json } from "../helpers";
+import { acceptInvite, bootstrapAdmin } from "../helpers/accounts";
 import {
   callJmap,
   resetDb,

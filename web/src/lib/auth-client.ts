@@ -3,6 +3,7 @@ import { oauthProviderClient } from "@better-auth/oauth-provider/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { adminClient, magicLinkClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
+import { opaqueClient } from "./opaque/client";
 import { getApiBase } from "@/lib/api-base";
 
 export const AUTH_BASE_PATH = "/api/auth";
@@ -13,6 +14,7 @@ export function createAppAuthClient(baseURL: string) {
     basePath: AUTH_BASE_PATH,
     fetchOptions: { credentials: "include" },
     plugins: [
+      opaqueClient(),
       passkeyClient(),
       magicLinkClient(),
       adminClient(),

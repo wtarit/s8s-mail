@@ -5,6 +5,7 @@ import { user } from "./auth-schema";
 // Generated: `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts`
 // (run from server/ after changing the plugin set in src/auth/auth.ts), then `pnpm db:generate:d1`.
 export * from "./auth-schema";
+export * from "./opaque-schema";
 
 /**
  * D1 global directory: which domains we serve, which JMAP accounts exist and
@@ -64,8 +65,10 @@ export const address = sqliteTable(
 );
 
 /**
- * One-time invite links. The raw token is only ever shown to the admin (and mailed to the
- * recovery address); we store sha256(token). Accepting an invite sets `used_at` and starts a session.
+ * Invite links. The raw token is only ever shown to the admin (and mailed to the recovery
+ * address); we store sha256(token). Opening a link starts an enrollment-only session and does
+ * not use the invite up: it is spent (`used_at`, `claim_id`) in the same D1 batch that saves
+ * the first factor and resets the account.
  */
 export const invite = sqliteTable(
   "invite",
@@ -78,6 +81,8 @@ export const invite = sqliteTable(
       .references(() => user.id, { onDelete: "cascade" }),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     usedAt: integer("used_at", { mode: "timestamp_ms" }),
+    /** Random per claim, so only the claiming batch's follow-up statements apply (see enrollment/commit.ts). */
+    claimId: text("claim_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("invite_user_idx").on(t.userId)],

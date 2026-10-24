@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/form-error";
 import { errorMessage } from "@/lib/api";
+import { isStepUpCancelled } from "@/lib/step-up";
 import { useT } from "@/i18n";
 
 interface ConfirmDialogProps {
@@ -46,7 +47,8 @@ export function ConfirmDialog({
       await onConfirm();
       onOpenChange(false);
     } catch (e) {
-      setError(errorMessage(e));
+      // backing out of a step-up prompt keeps the dialog open without an error
+      if (!isStepUpCancelled(e)) setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

@@ -4,6 +4,9 @@ export const BASE = "http://localhost:8787";
 export const BOOTSTRAP_TOKEN = "test-bootstrap-token";
 
 const TABLES = [
+  "pending_sign_in",
+  "opaque_challenge",
+  "opaque_credential",
   "oauth_access_token",
   "oauth_refresh_token",
   "oauth_consent",
@@ -75,12 +78,17 @@ export async function request<T = Json>(
   return { status: res.status, headers: res.headers, body: body as T };
 }
 
-/** "name=value; name2=value2" from a response's Set-Cookie headers. */
+/** "name=value; name2=value2" from a response's Set-Cookie headers (last value per name; cleared cookies dropped). */
 export function cookieFrom(headers: Headers): string {
-  return headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
+  const cookies = new Map<string, string>();
+  for (const header of headers.getSetCookie()) {
+    const [pair = ""] = header.split(";");
+    const eq = pair.indexOf("=");
+    const name = pair.slice(0, eq);
+    if (pair.slice(eq + 1)) cookies.set(name, pair);
+    else cookies.delete(name);
+  }
+  return [...cookies.values()].join("; ");
 }
 
 export function tokenFromInviteUrl(url: string): string {
@@ -90,30 +98,4 @@ export function tokenFromInviteUrl(url: string): string {
 export interface Session {
   cookie: string;
   userId: string;
-}
-
-/** Accepts an invite link and returns the resulting session cookie. */
-export async function acceptInvite(inviteUrl: string): Promise<Session> {
-  const res = await request<{ ok: true; userId: string }>(
-    `/api/invite/${tokenFromInviteUrl(inviteUrl)}/accept`,
-    { method: "POST", json: {} },
-  );
-  if (res.status !== 200)
-    throw new Error(`accept failed: ${res.status} ${JSON.stringify(res.body)}`);
-  return { cookie: cookieFrom(res.headers), userId: res.body.userId };
-}
-
-/** Bootstraps the first admin (user admin@example.com) and signs in via its invite. */
-export async function bootstrapAdmin(
-  address = "admin@example.com",
-  recoveryEmail = "admin-recovery@example.org",
-): Promise<Session> {
-  const res = await request<{ invite: { url: string } }>("/api/bootstrap", {
-    method: "POST",
-    json: { name: "Admin", primaryAddress: address, recoveryEmail },
-    headers: { authorization: `Bearer ${BOOTSTRAP_TOKEN}` },
-  });
-  if (res.status !== 201)
-    throw new Error(`bootstrap failed: ${res.status} ${JSON.stringify(res.body)}`);
-  return acceptInvite(res.body.invite.url);
 }

@@ -1,10 +1,13 @@
 import { IconFingerprint } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { FormError } from "@/components/form-error";
+import { useStepUp } from "@/components/step-up";
 import { LoadingButton } from "@/components/loading-button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { authErrorMessage, getAuthClient } from "@/lib/auth-client";
+import { ApiRequestError, unwrapAuth } from "@/lib/api";
+import { getAuthClient } from "@/lib/auth-client";
+import { isStepUpCancelled } from "@/lib/step-up";
 import { parseUserAgent } from "@/lib/user-agent";
 import { useT } from "@/i18n";
 
@@ -17,14 +20,17 @@ export function suggestDeviceName(ua: string, t: ReturnType<typeof useT>): strin
 
 interface AddPasskeyFormProps {
   onAdded: () => void | Promise<void>;
+  /** Called with a failed save first; return true when the caller handled it. */
+  onFailure?: (error: ApiRequestError) => boolean;
   large?: boolean;
   /** Extra controls rendered after the submit button (e.g. Cancel). */
   children?: React.ReactNode;
 }
 
 /** Name the device, then run the WebAuthn registration through Better Auth. */
-export function AddPasskeyForm({ onAdded, large, children }: AddPasskeyFormProps) {
+export function AddPasskeyForm({ onAdded, onFailure, large, children }: AddPasskeyFormProps) {
   const t = useT();
+  const stepUp = useStepUp();
   const [name, setName] = useState(() => suggestDeviceName(navigator.userAgent, t));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -40,15 +46,20 @@ export function AddPasskeyForm({ onAdded, large, children }: AddPasskeyFormProps
     setBusy(true);
     setError(undefined);
     try {
-      const result = await getAuthClient().passkey.addPasskey({ name: name.trim() });
-      if (result.error) {
-        setError(authErrorMessage(result.error, t("passkeys.addFailed")));
-        setBusy(false);
-        return;
-      }
+      await stepUp.run(() => unwrapAuth(getAuthClient().passkey.addPasskey({ name: name.trim() })));
       await onAdded();
-    } catch {
-      setError(t("passkeys.addFailed"));
+    } catch (err) {
+      if (isStepUpCancelled(err)) {
+        // the user backed out of the step-up prompt: nothing to report
+      } else if (err instanceof ApiRequestError && onFailure?.(err)) {
+        // handled by the caller
+      } else {
+        setError(
+          err instanceof ApiRequestError && err.code !== "auth_error" && err.message
+            ? err.message
+            : t("passkeys.addFailed"),
+        );
+      }
     }
     setBusy(false);
   }

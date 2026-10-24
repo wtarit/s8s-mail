@@ -1,6 +1,7 @@
 import { exports } from "cloudflare:workers";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { BASE, acceptInvite, bootstrapAdmin, request, type Session, type Json } from "../helpers";
+import { BASE, request, type Session, type Json } from "../helpers";
+import { acceptInvite, bootstrapAdmin } from "../helpers/accounts";
 import { callJmap, resetDb, bearer, oauthTokens } from "../helpers/auth-jmap";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));

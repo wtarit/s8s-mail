@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router";
+import { MeStepUpProvider } from "@/components/step-up";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthSession } from "@/lib/auth-client";
 import { MeProvider } from "@/lib/me";
@@ -24,7 +25,9 @@ export function RequireSession() {
   }
   return (
     <MeProvider>
-      <Outlet />
+      <MeStepUpProvider>
+        <Outlet />
+      </MeStepUpProvider>
     </MeProvider>
   );
 }
