@@ -1,0 +1,65 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "s8s-mail",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "observability": { "enabled": true, "traces": { "enabled": true } },
+  "secrets": { "required": ["BETTER_AUTH_SECRET", "BOOTSTRAP_TOKEN", "OPAQUE_SERVER_SETUP"] },
+
+  // The SPA (web/dist). In SPA mode, browser navigations are answered with index.html
+  // without running the Worker, so every path a browser navigates to that the Worker must
+  // handle (OAuth authorize, /.well-known/*, downloads) has to be in run_worker_first.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/jmap/*", "/.well-known/*"],
+  },
+
+  // Import *.sql as text (drizzle durable-sqlite migrations import their SQL files).
+  "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "s8s-mail",
+      // TODO(deploy): placeholder. Replace with the real id from `wrangler d1 create s8s-mail`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "drizzle/d1",
+    },
+  ],
+
+  "r2_buckets": [
+    {
+      "binding": "BLOBS",
+      // TODO(deploy): create the bucket (`wrangler r2 bucket create s8s-mail-blobs`).
+      "bucket_name": "s8s-mail-blobs",
+    },
+  ],
+
+  "durable_objects": {
+    "bindings": [{ "name": "ACCOUNT", "class_name": "AccountDO" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountDO"] }],
+
+  // Non-secret vars only. Secrets (MAILGUN_API, BETTER_AUTH_SECRET, BOOTSTRAP_TOKEN, ...) go through
+  // `wrangler secret put` and `.dev.vars` locally; never in this file.
+  "vars": {
+    "APP_NAME": "S8S Mail",
+    "MAIL_PROVIDER": "mailgun",
+    "MAILGUN_REGION": "us",
+    // Sending domain configured at the provider (Mailgun) — TODO(deploy): real value in the local deploy config.
+    "MAILGUN_DOMAIN": "example.com",
+    // From header for system mail (magic links, invites) — TODO(deploy).
+    "SYSTEM_MAIL_FROM": "S8S Mail <no-reply@example.com>",
+    // Public origin of this Worker (Better Auth baseURL / OIDC issuer) — TODO(deploy).
+    "PUBLIC_URL": "http://localhost:8787",
+    // Origin of the webmail (Bulwark Lite). Allowed for CORS on the OIDC/JMAP routes and used
+    // for the Bulwark OAuth client's redirect URI (`${WEBMAIL_ORIGIN}/oauth/callback`) — TODO(deploy).
+    "WEBMAIL_ORIGIN": "http://localhost:4173",
+    // client_id of the first-party public OAuth client created for the webmail.
+    "BULWARK_CLIENT_ID": "bulwark-lite",
+  },
+}

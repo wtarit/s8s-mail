@@ -1,0 +1,9 @@
+packages:
+  - server
+  - web
+  - shared
+allowBuilds:
+  "@prisma/client": false
+  better-sqlite3: false
+  esbuild: true
+  workerd: true

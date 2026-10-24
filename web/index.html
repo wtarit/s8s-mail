@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>S8S Mail</title>
+    <script>
+      // Apply the stored/OS theme before first paint to avoid a flash. Keep in sync with src/theme.
+      try {
+        var p = localStorage.getItem("s8s-theme");
+        var dark =
+          p === "dark" ||
+          (p !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
