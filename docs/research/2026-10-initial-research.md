@@ -1,6 +1,6 @@
 # Initial research: serverless JMAP mail on Cloudflare
 
-Date: 2026-10-12. Status: **research only.** Nothing here is a decision unless it also appears in `CLAUDE.md`.
+Date: 2026-10-12. Status: **research only.** Nothing here is a decision unless it is also recorded in `README.md`, `docs/` or a module README.
 
 Sources: four research passes (Better Auth/OIDC, Bulwark codebase, Cloudflare platform limits, prior-art projects). The claims marked ✅ were re-checked against primary sources or the code during this session. The rest are from the research passes and should be verified before relying on them.
 

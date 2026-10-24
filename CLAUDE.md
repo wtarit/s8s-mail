@@ -1,180 +1,69 @@
 # s8s-mail
 
-Serverless mail server on Cloudflare. It receives mail with Email Workers, stores it, serves mailboxes over **JMAP**, and sends through pluggable outbound providers.
+Serverless JMAP mail server on Cloudflare Workers. Features, architecture and commands: `README.md`. Deploying: `docs/deploy.md`.
 
-## Repo layout
+## Tooling
 
-pnpm workspace:
-- `server/`: the Worker. JMAP API, Better Auth, `/.well-known/*`, the `email()` handler, Durable Object classes. It serves `../web/dist` as static assets.
-- `web/`: the auth/account/admin SPA.
-- `shared/`: types and schemas shared between server and web.
-- `docs/research/`: dated research notes and open questions. Not authoritative (see "Docs convention").
+- **pnpm only**, never npm or yarn. Wrangler is a local dev dependency (`pnpm wrangler …`); never install it globally.
+- Before finishing a change: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
+- **Max 300 lines per file**, tests included (oxlint `max-lines`). Split along real seams and keep the import path stable (`foo.ts` → `foo/index.ts`).
+- After editing `wrangler.jsonc`, run `cf-typegen`: `worker-configuration.d.ts` is committed.
+- After changing the Better Auth plugin set, regenerate the schema in `server/`: `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`. `auth migrate` cannot reach D1.
 
-Commands (run from the repo root; Node 22.22+ and pnpm 11):
-- `pnpm install`
-- `pnpm dev`: `wrangler dev` on http://localhost:8787 (Worker + `web/dist` assets). For SPA hot reload run `pnpm --filter @s8s/web dev` (Vite, proxies `/api`, `/jmap`, `/.well-known` to :8787).
-- `pnpm build`: builds `shared`, then `web` (→ `web/dist`), then a `wrangler deploy --dry-run` of `server`. Deploy is `pnpm --filter @s8s/server deploy`.
-- `pnpm lint` (oxlint), `pnpm format` / `pnpm format:check` (oxfmt), `pnpm typecheck`, `pnpm test` (vitest in every package; `server` runs inside workerd via `@cloudflare/vitest-plugin`).
-- `pnpm coverage` (istanbul; per-package thresholds in each vitest config fail the run on regression).
-- Per package: `pnpm --filter @s8s/server test`, `pnpm --filter @s8s/web test`, etc.
-- Server DB (in `server/`; or `pnpm --filter @s8s/server <script>`):
-  - `db:generate:d1`: D1 schema `src/db/schema.ts` → `drizzle/d1/` (applied with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy).
-  - `db:generate:do`: account-DO schema `src/store/schema.ts` → `drizzle/do/` (run by `AccountDO` on startup).
-  - `cf-typegen`: regenerates the committed `worker-configuration.d.ts` after any `wrangler.jsonc` change.
-- `wrangler.jsonc` holds placeholder resource ids (`TODO(deploy)`); never run `wrangler d1 create`, `r2 bucket create` or `deploy` without the owner's say-so.
+## Ask the owner first
 
-## Stack
+- `wrangler deploy`, `d1 create`, `r2 bucket create`, and remote migrations. `wrangler.jsonc` holds placeholder ids (`TODO(deploy)`).
 
-| Concern | Choice |
-|---|---|
-| Language / packages | TypeScript. **pnpm only** (workspace root = this repo); never npm or yarn. |
-| Wrangler | Project-local dev dependency, run as `pnpm wrangler …`. Never install it globally. |
-| Server Worker | **Hono** (not Elysia: its Workers adapter is experimental) + Better Auth Hono integration |
-| DB access | **Drizzle** for both D1 (`drizzle-orm/d1`) and account DOs (`drizzle-orm/durable-sqlite` + its migrator, run on DO startup). FTS5 virtual tables and triggers may need raw SQL inside Drizzle migrations. |
-| Validation | **Zod v4** (already a Better Auth dependency).<br>SPA API routes: `@hono/zod-validator`, with schemas shared via `shared/`.<br>JMAP request envelope: a bad envelope returns `urn:ietf:params:jmap:error:notRequest`.<br>JMAP per-method args: bad args return an `invalidArguments` method error, and the other calls in the request still run. |
-| Lint / format | **oxc ecosystem: oxlint + oxfmt** (not Biome, not ESLint/Prettier).<br>oxfmt is pre-1.0, so pin exact versions.<br>Ignore generated files: `worker-configuration.d.ts`, shadcn `components/ui`.<br>**Max 300 lines per file** (oxlint `max-lines`; blank and comment lines not counted), tests included. Split along real seams, keeping the module's import path stable (e.g. `foo.ts` → `foo/index.ts`). Exempt: generated `auth-schema.ts` and the `en.ts` message catalog. |
-| Tests | `server/test/<area>/` mirrors `src/` (api, auth, jmap, mail, mime, send, store); shared setup and helpers in `server/test/helpers/`. `web` and `shared` colocate `*.test.ts(x)` next to the code. |
-| SPA (`web/`) | **Vite + React + shadcn/ui** (Tailwind), Better Auth React client. Components from better-auth-ui may be copied in. |
+## Private data
 
-## Product scope
+- The test zone, hostnames, Mailgun domain and test mailbox are in `CLAUDE.local.md` (gitignored). Read it before deploying or running end-to-end mail tests.
+- **Never put personal addresses, the test domain or account details in tracked files**: code, wrangler config, fixtures, tests, docs or commit messages. Use `example.com`. Deployment-specific wrangler values go in the gitignored `server/wrangler.local.jsonc`.
 
-- Receive mail via Cloudflare Email Routing → Worker `email()` handler, and store it.
-- Users access mail **only over JMAP** (RFC 8620 core, RFC 8621 mail). Email only: **no CardDAV/CalDAV, no contacts/calendars JMAP**.
-- Organizational/personal deployment: admins create and remove accounts. No public signup endpoint
-- Outbound sending through a **provider abstraction**. V1 provider: **Mailgun**. Adding a provider must not require touching JMAP or storage code.
-  - **The provider is chosen per deployment** (one active provider for the whole install).
-  - Advertise its effective limit as a single deployment-wide `maxSizeAttachmentsPerEmail`, minus MIME/base64 overhead, and enforce the same limit in `EmailSubmission/set`.
-- **SSO is in V1.** s8s-mail is the OIDC provider for Bulwark and other internal apps.
-- **Auth = Better Auth.** Use as much of it as possible.
-  - Login methods: **email + password** (Better Auth core, default native scrypt), **passkeys** (`@better-auth/passkey`) and **magic links** (`magicLink()`). Sign-up is disabled on every method.
-  - Password login on Workers Free is a **deliberate experiment**: scrypt is measured at 70–170 ms against a 10 ms budget. Instrument and log its CPU time. Passkeys and magic links are the fallback if it fails in practice.
-  - `admin()`
-  - `@better-auth/oauth-provider` + `jwt()`
-  - `@better-auth/api-key` for app passwords. These are random high-entropy keys, so a fast hash is fine; never scrypt per JMAP request.
-- **Enrollment and recovery:**
-  - The admin creates a user and receives a **one-time invite link** to hand over out of band. The user opens it and registers a passkey.
-  - Each user also has an **external recovery address**, set by the admin and stored in D1. Magic links are always sent to that recovery address, **never to the user's own mailbox on this server**, because that would be circular.
-  - Losing a passkey or password means a magic link to the recovery address, or a new invite from the admin.
-  - Magic-link and invite emails go out through the configured sending provider (Mailgun).
-- **Build our own frontend, not backend compatibility layers.** We write the login, consent, password-reset, account and admin pages against Better Auth.
-  - Do **not** implement Stalwart-specific endpoints (`/api/auth`, `/api/discover`) or Stalwart `x:` JMAP methods to fit a client.
-- **The auth/account/admin frontend is a static SPA** (no SSR).
-  - **Bundled:** by default the main Worker serves it via Workers Static Assets.
-  - **Headless:** it must also work when deployed separately, with the API base URL set in runtime config, not at build time.
-- **No spam filtering in V1.** Email Routing's own SPF/DKIM/DMARC/RBL rejection is the only filter.
-- **Address model:**
-  - A deployment serves **multiple domains**; each domain is a Cloudflare zone with Email Routing.
-  - Each account has one primary address plus **aliases** (other full addresses, any served domain). It receives on all of them, and each is a JMAP Identity it can send as.
-  - **Plus-addressing** (`user+tag@`) always routes to `user@`.
-  - The address → account mapping lives in D1.
-  - **Catch-all** (optional, per domain, `domain.catch_all_address`): mail to an unknown local part on a served domain goes to the account owning that address (any existing address on any served domain). Exact match and `+tag` stripping win; unset means reject with 5.1.1; unserved domains are always rejected. The admin API clears the setting in the same D1 batch that deletes the address (alias removed, user deleted), so it never dangles.
-- **Webmail = patched Bulwark Lite**, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail). It is a separate repo, AGPL-3.0, usually checked out next to this one as `../s8s-mail-webmail/`.
-  - The patch enables the OIDC redirect flow for the `static` Lite target.
-  - It uses standard `.well-known` discovery and takes the client ID from `config.json`.
-  - Scope: `docs/research/2026-10-auth-storage-webmail.md` §5.
-- Host everything on Cloudflare. Only outbound delivery (Mailgun) is external.
-- Use only Cloudflare products available to the public (GA or open public beta). No private-beta or waitlist features.
+## Scope guardrails
 
-## Storage architecture
+- Mail over **JMAP only** (RFC 8620, RFC 8621). No CardDAV/CalDAV, no contacts or calendars.
+- Build our own frontend, not compatibility layers: no Stalwart endpoints (`/api/auth`, `/api/discover`) or `x:` methods, and **never advertise `urn:stalwart:jmap`**.
+- No public signup on any auth method. Better Auth core plaintext-password endpoints stay disabled.
+- Outbound mail goes through the provider abstraction. Adding a provider must not touch JMAP or storage code.
+- Only Cloudflare products that are GA or in open public beta. Mailgun is the only external service.
+- **Never copy Bulwark code (AGPL) into this repo (MIT).** Reading it for reference is fine.
 
-**One SQLite-backed Durable Object per JMAP account** holds that account's mail data:
-- mailboxes, emails, threads, keywords;
-- JMAP state counters and a trigger-maintained change log (for `Foo/changes`);
-- full-text search (FTS5).
+## Workers Free is the target plan
 
-| Store | Holds |
-|---|---|
-| Account DO (`idFromName(accountId)`) | All per-account mail data above. The single writer for that account: all ingest and JMAP writes go through it. |
-| R2 | Raw `.eml` messages and uploaded blobs, keyed by blobId. Never store message bodies in SQLite rows. |
-| D1 (one DB) | Global directory only: Better Auth tables, users → accounts, domains, address → account routing, (later) shared-mailbox grants. **No mail data in D1.** |
+- **10 ms CPU per invocation**, Durable Objects included. Light testing can pass while production fails: measure CPU, don't eyeball it. Gate Paid-only features behind config and say so.
+- 128 MB memory: never hold more than one copy of a 25 MiB message. `message.raw` is a single-use stream. Keep `email()` minimal and defer heavy parsing.
+- 50 subrequests per invocation. 100k D1 writes/day, so no writes on hot paths.
+- Paths a browser navigates to (OAuth authorize, `/.well-known/*`, attachment downloads) must be in `assets.run_worker_first`, or they silently return the SPA.
 
-- Stateless Worker invocations handle `email()` ingest and the JMAP API. They do auth, R2 I/O and MIME parsing, then call the account DO over RPC.
-- **Push:**
-  - Bulwark's SSE stream is held by a stateless Worker invocation, which subscribes to the account DO over a WebSocket.
-  - The DO accepts that WebSocket with the **hibernation API** (`ctx.acceptWebSocket`).
-  - **Never hold an SSE response inside a DO**: it keeps the DO billed for the whole connection.
-- A future shared mailbox = its own account (`isPersonal: false`) = its own DO, with grants in D1. Bulwark already shows non-personal session accounts as shared.
-- Keep the DO-specific bits behind an `AccountStore` interface (and R2/D1 behind `BlobStore`/`Directory`), so a self-hosted adapter (SQLite file per account) stays possible.
-- Why not D1 for mail: D1 has a hard 10 GB per database and is single-threaded. Details in research §7c.
+## Storage invariants
 
-## Platform constraints (verified 2026-10-12, re-check if old)
+- The account DO is the **single writer** for its account: all ingest and JMAP writes go through it.
+- Message bodies and blobs live in R2, never in SQLite rows. **No mail data in D1.**
+- Never hold an SSE response inside a DO (it stays billed for the whole connection). DOs accept WebSockets with the hibernation API.
+- Keep DO-specific code behind `AccountStore` (`server/src/store/types.ts`), and R2/D1 access behind similar seams, so a self-hosted adapter stays possible.
 
-- Inbound Email Routing max message: **25 MiB**. `message.raw` is a **single-use stream**.
-- Mailgun: 25 MB max message, raw MIME via `POST /v3/{domain}/messages.mime`, separate US/EU API hosts.
-- **Target plan: Workers Free** (decided 2026-10-12, as an experiment: build it and see what breaks).
-  - Every invocation (`fetch`, `email`, Durable Object request/alarm/WebSocket message) gets **10 ms CPU**. DOs get the same limit as Workers (DO FAQ), so they are no workaround.
-  - Cloudflare allows occasional bursts, but sustained overruns are killed. Light testing can therefore pass while production fails intermittently: **measure CPU, don't eyeball it.**
-  - Known pressure points:
-    - password hashing (kept as an experiment, see Auth);
-    - parsing large MIME messages (keep `email()` minimal and defer heavy parsing);
-    - building outgoing MIME with attachments;
-    - 50 subrequests per invocation.
+## Auth gotchas
 
-  - Code should not assume Paid limits. When something can only work on Paid, gate it behind config and say so.
-- **Workers Static Assets in SPA mode** answers browser *navigations* with `index.html` without running the Worker.
-  - Every path a browser navigates to must be listed in `assets.run_worker_first`: OAuth authorize, `/.well-known/*`, attachment downloads.
-  - Otherwise those paths silently return the SPA.
-- Workers isolate memory is 128 MB. Do not hold multiple copies of a 25 MiB message in memory.
+- Load Better Auth only through `getAuth(env)` (lazy). `email()`, `/api/health` and the JWT path of `jmapAuth` must not import it. Never wrap one D1 binding in two auth instances.
+- `jmapAuth` stays read-only: never call `auth.api.verifyApiKey` (it writes a usage row per call), and never fetch our own `/api/auth/jwks` over HTTP (read the `jwks` table).
+- JMAP accepts only JWT access tokens and app passwords. **Every first-party OAuth client must send `resource=<origin>/jmap`**, or it gets an opaque token and a 401.
+- App passwords are high-entropy keys: a fast hash, never a KDF per JMAP request.
+- Never import `@serenity-kit/opaque`'s default runtime entry on Workers; use `server/src/auth/opaque-runtime.ts`.
+- Worker code must lazy-import any module that tests `vi.mock` (e.g. `../send`): the Worker entry is evaluated before the mock applies.
+- Factor, recovery and invite behavior must match `docs/account-security.md`.
 
-Sources and full limit tables: `docs/research/2026-10-initial-research.md` §2.
+## JMAP
 
-### Better Auth on Workers (verified)
-
-- Needs the `nodejs_compat` flag.
-- The auth instance is built lazily and cached per `env` object (`createAuth(env)` in `server/src/auth/auth.ts`); never wrap the same D1 binding in two instances. Better Auth is imported dynamically (`getAuth(env)` in `server/src/auth/index.ts`) so `email()` and `/api/health` do not load it. `waitUntil` reaches it through `AsyncLocalStorage` (`request-context.ts`).
-- **Password hashing:** keep Better Auth's default.
-  - `@better-auth/utils` resolves `./password` under the `workerd` export condition to native `node:crypto` scrypt (N=16384).
-  - Check the built bundle picks that path, not the pure-JS fallback.
-  - Do not use `@node-rs/argon2`; it is a native addon and won't load on Workers. `node:crypto` argon2 is also unsupported.
-  - **Never hash passwords with WebCrypto PBKDF2.** Production workerd caps it at **100,000 iterations** on every plan (workerd#1346), below OWASP's 600k.
-- App-password / API-key checks must be cheap: random high-entropy keys, never scrypt per JMAP request.
-- D1 migrations: regenerate `src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (run in `server/`; the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`, then `wrangler d1 migrations apply`. `auth migrate` cannot reach D1.
-- **JMAP access tokens are JWTs.** `oauthProvider({ resources })` registers the resource `${PUBLIC_URL origin}/jmap` (`accessTokenTtl` 600 s). A client that sends RFC 8707 `resource=<origin>/jmap` on the authorize and token-code requests gets an EdDSA JWT (`aud` = that resource, `azp`, `sid`); refreshes keep producing JWTs because the provider stores the resources with the refresh token. Refresh tokens stay DB-backed.
-  - **JMAP accepts only JWT access tokens (with `resource`) and app passwords (Basic).** A client that sends no `resource` gets an opaque token from the provider (fine for `/oauth2/userinfo`, e.g. SSO apps), but `jmapAuth` answers it with 401 `Invalid credentials`. Every first-party OAuth client must therefore send `resource=<origin>/jmap`.
-  - `enforcePerClientResources` stays on: a client must be linked to the resource in `oauth_client_resource`, otherwise authorize/token fail with `invalid_target`. `ensureBulwarkClient` (bootstrap, `POST /api/admin/oauth-clients/ensure-defaults`) creates the resource row and the link; other first-party clients need `POST /admin/oauth2/resources/:identifier/clients/:client_id`. The resource is seeded insert-only, so a TTL change in code reaches an existing deployment only through `ensure-defaults`.
-- **The JWT path in `jmapAuth` never imports Better Auth.** It reads public keys straight from the `jwks` table (cached per isolate; reloaded once on an unknown `kid`, at most every 30 s, and fully every 10 min) and checks `iss`, `aud`, EdDSA, `exp`, `azp` is a trusted client (cached 60 s, so revoking trust takes up to a minute), and `sid` is a live session (1 D1 read). Then `loadUser` (ban check) and `buildPrincipal`.
-- `auth.api.verifyApiKey` writes a usage row to D1 on every call (100k writes/day on Free). `jmapAuth` therefore does a read-only lookup with the plugin's own SHA-256 hash (`defaultKeyHasher`).
-- Tests: the Worker entry is evaluated before a test file's `vi.mock` runs, so modules that tests mock (`../send`) must be imported lazily by Worker code (`src/auth/system-mail.ts`).
-- JWKS: never fetch our own `/api/auth/jwks` over HTTP from the same Worker. `jmapAuth` reads the `jwks` table (see above).
-
-## What Bulwark (the client) expects from our JMAP server
-
-Verified in the Bulwark source (v1.14.2; paths below are relative to `../s8s-mail-webmail/`):
-- **Required:** `urn:ietf:params:jmap:core`, `urn:ietf:params:jmap:mail`. Sending needs `urn:ietf:params:jmap:submission`. Attachments need session `uploadUrl`/`downloadUrl`.
-- **Optional, feature-detected:** session `eventSourceUrl` (SSE push, polling fallback; no WebSocket), `vacationresponse`, `quota`, `sieve`.
-- **Size limits shown to users:** Bulwark reads `maxSizeUpload` (core) and `maxSizeAttachmentsPerEmail` (mail *account* capability) and rejects oversize attachments in the composer with a toast. See `components/email/email-composer.tsx` around line 1695 and `lib/jmap/client.ts` around line 5146.
-  - These values must reflect the outbound provider's real limit, minus MIME/base64 overhead.
-  - The server must also enforce the limit on submission, because client checks are advisory.
-- It also reads `maxCallsInRequest` (default 50) and `maxObjectsInGet` / `maxObjectsInSet` (default 500).
-- `urn:stalwart:jmap` gates Bulwark's password, app-password and 2FA screens, which call Stalwart `x:` methods. **We do not implement them, so never advertise that capability.**
-- Bulwark has **no** UI for password reset, signup or admin user management.
-- Response-shape reference: Bulwark's mock server at `app/api/dev-jmap/[...path]/route.ts`.
-- Bulwark is **AGPL**: read its code for reference, **never copy it into this repo** (MIT).
+- `maxSizeAttachmentsPerEmail` is the provider's real limit minus MIME/base64 overhead, and `EmailSubmission/set` enforces the same limit (client checks are advisory).
+- What Bulwark expects from the server: `server/src/jmap/README.md`.
 
 ## UI (`web/`)
 
-- **Binding spec: `docs/design-system.md`.** It covers:
-  - Bulwark's token values under shadcn/ui token names;
-  - the system font stack, Tabler icons, `--radius: 0.75rem`;
-  - light and dark via a `.dark` class;
-  - the AuthLayout and AppShell templates.
-- Default branding, when a deployment sets none: name **"S8S Mail"**, logo is a letter **"S"** mark. Both are overridable via runtime `config.json`.
-- **English only** for now, but **every user-visible string lives in one message catalog**: no inline literals in components, so locales can be added later.
+- `docs/design-system.md` is binding.
+- English only for now, but every user-visible string goes in the message catalog (`web/src/i18n/en.ts`), never inline.
 
-## Deployment conventions
+## Docs
 
-- Hostnames per deployment, under the org's primary domain:
-  - **`mail.<domain>`**: the main Worker (JMAP API, Better Auth/OIDC issuer, auth/account/admin SPA).
-  - **`webmail.<domain>`**: Bulwark Lite on its own Worker.
-- Both hostnames are on the same site, so auth cookies stay first-party. JMAP needs CORS for the `webmail.<domain>` origin.
-
-### Test deployment
-
-- The concrete test zone, hostnames, Mailgun domain and test mailbox are in **`CLAUDE.local.md`** (gitignored). Read it before deploying or running end-to-end mail tests.
-- **Never put personal addresses, the test domain or account details in tracked files.** That covers code, wrangler config, fixtures, tests, docs and commit messages. Use `example.com` placeholders in tracked files. Deployment-specific wrangler values (routes, custom domains) go in a gitignored config.
-
-## Docs convention
-
-- Research, option comparisons and open questions go in `docs/research/` as separate dated files.
-- When a decision is made, move the conclusion into this file. Mark the research doc's open item as resolved.
-- Current open decisions are in `docs/research/2026-10-auth-storage-webmail.md` §7.
+- Research, option comparisons and open questions go in dated files in `docs/research/`. They are not authoritative.
+- Decisions go in `README.md` (features), `docs/` (specs) or the module's README (how it's built), not in this file.
+- Update a module's README in the same change as its code.

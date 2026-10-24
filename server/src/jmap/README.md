@@ -34,6 +34,18 @@ Partial / deliberate limits:
 - `Identity/set`: update `name`, `replyTo`, `bcc`, `textSignature`, `htmlSignature` only; create/destroy are `forbidden` (addresses and aliases are managed by the admin in D1). The Identity id is `i` + 24 hex of SHA-256(address).
 - Not enforced: `maxConcurrentRequests` / `maxConcurrentUpload` (advertised only; the Worker is stateless).
 
+## Client compatibility: Bulwark
+
+What the webmail client expects from this server. Verified against Bulwark v1.14.2; paths are relative to `s8s-mail-webmail/`. Read Bulwark for reference only and never copy its code here (AGPL vs MIT).
+
+- **Required:** `urn:ietf:params:jmap:core` and `urn:ietf:params:jmap:mail`. Sending needs `urn:ietf:params:jmap:submission`. Attachments need the session `uploadUrl` and `downloadUrl`.
+- **Optional, feature-detected:** session `eventSourceUrl` (SSE push with a polling fallback; Bulwark does not use WebSocket), `vacationresponse`, `quota`, `sieve`.
+- **Size limits shown to users:** Bulwark reads `maxSizeUpload` (core) and `maxSizeAttachmentsPerEmail` (mail *account* capability) and rejects oversize attachments in the composer with a toast (`components/email/email-composer.tsx` around line 1695, `lib/jmap/client.ts` around line 5146). Both values must reflect the outbound provider's real limit minus MIME/base64 overhead. The server enforces the same limit on submission, because client checks are advisory.
+- It also reads `maxCallsInRequest` (default 50) and `maxObjectsInGet` / `maxObjectsInSet` (default 500).
+- **Never advertise `urn:stalwart:jmap`.** It gates Bulwark's password, app-password and 2FA screens, which call Stalwart `x:` methods we do not implement.
+- Bulwark has **no** UI for password reset, signup or admin user management. The SPA in `web/` covers those.
+- Response-shape reference: Bulwark's mock server at `app/api/dev-jmap/[...path]/route.ts`.
+
 ## Decisions
 
 - **Unparsed messages.** `Email/get` on a `pending`/`failed` row (the DO alarm has not produced bodies yet): body properties are parsed on demand inside the request for raw messages up to 128 KiB, at most 3 per request, not persisted. Otherwise the response carries a placeholder `textBody` and `bodyValues` with `isTruncated: true`, which Bulwark answers by refetching. List-style properties (`preview`, `hasAttachment`) are whatever the DO stored (`""`/false until parsed). Downloading a part blob that is missing in R2 re-parses the raw message (up to 1 MiB).

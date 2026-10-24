@@ -9,9 +9,9 @@ import { sessionCreateHook } from "./session-hooks";
 import { loadUserFactors } from "./load";
 
 /**
- * Per-session factor tracking and the account-change policy (CLAUDE.md "Account security
- * model"). Sessions carry `passwordVerifiedAt` / `passkeyVerifiedAt` / `recoveryVerifiedAt`
- * (see `session.additionalFields` in auth.ts); `requireAccountChange` is the single gate.
+ * Per-session factor tracking and the account-change policy (docs/account-security.md).
+ * Sessions carry `passwordVerifiedAt` / `passkeyVerifiedAt` / `recoveryVerifiedAt` (see
+ * `session.additionalFields` in auth.ts); `requireAccountChange` is the single gate.
  */
 export const accountFactors = (env: OpaqueEnv) =>
   ({

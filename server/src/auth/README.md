@@ -7,7 +7,7 @@ Better Auth setup and auth middleware.
 - `enrollment/`: invite enrollment: the enrollment-only session and the atomic "save first factor + full reset" batch.
 - `opaque/`: OPAQUE password endpoints (sign-in, set/change, step-up) and their encrypted handshake state.
 - `request-context.ts`: `runInBackground()` (`waitUntil` via AsyncLocalStorage).
-- Schema: `../db/auth-schema.ts` is generated, see CLAUDE.md "Better Auth on Workers".
+- Schema: `../db/auth-schema.ts` is generated. After changing the plugin set, regenerate it with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (in `server/`), then `pnpm db:generate:d1`. See the root README, Development.
 
 OPAQUE uses the exact published `@serenity-kit/opaque@1.1.0` cryptography. Server
 commands run `opaque:prepare` to hash-check its source, extract the unchanged
@@ -25,9 +25,32 @@ changing or losing it invalidates existing password registrations. Local files
 are not uploaded automatically. See [Cloudflare secrets](https://developers.cloudflare.com/workers/configuration/secrets/)
 and [Serenity setup](https://opaque-auth.com/docs/get-started/add-to-existing-project).
 
+## JMAP tokens
+
+**Access tokens are JWTs.** `oauthProvider({ resources })` registers the resource `${PUBLIC_URL origin}/jmap` (`config.ts`, `accessTokenTtl` 600 s). A client that sends RFC 8707 `resource=<origin>/jmap` on the authorize and token-code requests gets an EdDSA JWT with `aud` (that resource), `azp` (client id) and `sid` (session id). Refreshes keep producing JWTs because the provider stores the resources with the refresh token. Refresh tokens stay DB-backed.
+
+**JMAP accepts only JWT access tokens and app passwords (Basic).** A client that sends no `resource` gets an opaque token. That is fine for `/oauth2/userinfo` (SSO apps), but `jmapAuth` answers it with 401 `Invalid credentials`. Every first-party OAuth client must send `resource=<origin>/jmap`.
+
+**Resource linking.** `enforcePerClientResources` stays on: a client must be linked to the resource in `oauth_client_resource`, otherwise authorize and token fail with `invalid_target`. `ensureBulwarkClient` (bootstrap, and `POST /api/admin/oauth-clients/ensure-defaults`) creates the Bulwark client, the resource row and the link. Other first-party clients need `POST /admin/oauth2/resources/:identifier/clients/:client_id`. The resource is seeded insert-only, so a TTL change in code reaches an existing deployment only through `ensure-defaults`.
+
+**The JWT path in `jmapAuth` never imports Better Auth.**
+- Public keys come straight from the `jwks` table, cached per isolate. An unknown `kid` reloads the set once, at most every 30 s. The full set reloads every 10 min.
+- It checks `iss`, `aud`, EdDSA and `exp`. `azp` must be a trusted client, cached 60 s, so revoking trust takes up to a minute. `sid` must be a live session (one D1 read).
+- Then `loadUser` (ban check) and `buildPrincipal`.
+- Never fetch our own `/api/auth/jwks` over HTTP from the same Worker.
+
+**App passwords.** `auth.api.verifyApiKey` writes a usage row to D1 on every call (the Free plan allows 100k writes a day). `jmapAuth` instead does a read-only lookup with the plugin's own SHA-256 hash (`defaultKeyHasher`). Keys are random and high-entropy, so a fast hash is correct; never run a KDF per JMAP request.
+
+## Workers notes
+
+- Better Auth needs the `nodejs_compat` flag.
+- `createAuth(env)` is cached per `env` object; never wrap one D1 binding in two instances. `getAuth(env)` imports Better Auth dynamically so `email()` and `/api/health` do not load it.
+- `system-mail.ts` (invite and magic-link mail) is imported lazily by Worker code. The Worker entry is evaluated before a test file's `vi.mock` runs, so a statically imported `../send` could not be mocked.
+- **Back-channel logout is unsupported on Workers** until it is patched here or fixed upstream. `@better-auth/oauth-provider` sends the `logout_token` with `fetch(..., { redirect: "error" })`, which workerd rejects with a `TypeError`; the provider only logs a warning. The same applies to fetching a client's `jwks_uri` (`private_key_jwt`). Neither runs today: no client is registered with a `backchannel_logout_uri` or `jwks_uri`. JMAP does not depend on it, because `jmapAuth` rejects a JWT whose `sid` session is gone.
+
 ## Account security model (as built)
 
-The spec is CLAUDE.md "Enrollment and recovery" and "Account security model"; this is how it maps to code.
+The spec is `docs/account-security.md`; this is how it maps to code.
 
 **Session stamps.** `session` has `passwordVerifiedAt`, `passkeyVerifiedAt`, `recoveryVerifiedAt` and `inviteId` (Better Auth `session.additionalFields`, `input: false`; regenerate `db/auth-schema.ts` as usual). Anything that creates a session without stamping it (admin impersonation, a plugin we did not wire) yields a session with no verified factor, so it can never change the account. `freshAge` is `0`: Better Auth's createdAt-based `freshSessionMiddleware` (used by `/list-sessions` and the passkey endpoints) is switched off, and `requireAccountChange` is the only freshness rule. It was not set to 300 because that would break `/list-sessions` for the sessions page.
 

@@ -1,4 +1,4 @@
-// Pure rules of the account security model (CLAUDE.md "Account security model"). No I/O.
+// Pure rules of the account security model (docs/account-security.md). No I/O.
 
 /** How long a factor verification counts for account changes. A time window, not a one-time grant. */
 export const FRESH_WINDOW_MS = 5 * 60 * 1000;

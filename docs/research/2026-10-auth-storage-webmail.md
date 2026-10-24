@@ -1,6 +1,6 @@
 # Follow-up research: auth, Durable Objects, shared mailboxes, webmail, spam
 
-Date: 2026-10-12. Follows `2026-10-initial-research.md`. Status: research. Decisions that came out of it are recorded in `CLAUDE.md`.
+Date: 2026-10-12. Follows `2026-10-initial-research.md`. Status: research. Decisions that came out of it are recorded in `README.md`, `docs/` and the module READMEs.
 
 ✅ = re-checked against primary source or code in-session. Everything else is from Haiku research passes; verify before relying on it.
 
@@ -253,7 +253,7 @@ No shipping Thunderbird JMAP yet: desktop has no commitment, iOS/Android are exp
 - Every page (login, consent, reset, account, admin) is behind auth or a one-shot token. Nothing needs SEO or server rendering.
 - Better Auth's OAuth provider only needs the `loginPage` / `consentPage` *URLs*. The SPA reads the signed query and calls the API.
 
-**Repo layout** (pnpm workspace inside `s8s-mail/`, flat, no `apps/` nesting; decided, see CLAUDE.md):
+**Repo layout** (pnpm workspace inside `s8s-mail/`, flat, no `apps/` nesting; decided, see README.md):
 
 ```
 s8s-mail/
@@ -369,7 +369,7 @@ Versions checked on npm 2026-10-12 ✅: Biome 2.5.15, oxlint 1.87.0, oxfmt 0.72.
 | Tailwind v4 CSS | Needs `css.parser.tailwindDirectives`. Open parser bugs (#12179) | Unverified |
 | Speed | Fast | Faster (vendor benchmarks) |
 
-**Decided: oxlint + oxfmt** (CLAUDE.md).
+**Decided: oxlint + oxfmt.**
 
 Trade-off: Biome is one stable tool, but weaker on Tailwind v4 CSS and has fewer rules. Oxc has more rules, full type-aware parity and better Tailwind sorting, but uses two tools and a pre-1.0 formatter.
 

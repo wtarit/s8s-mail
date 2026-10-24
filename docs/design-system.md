@@ -1,6 +1,6 @@
 # Design system: `web/` (auth, account, admin SPA)
 
-Status: **approved** (2026-10-12). Binding for `web/` (see CLAUDE.md → UI).
+Status: **approved** (2026-10-12). Binding for `web/`.
 
 Goal: login → consent → Bulwark webmail should feel like **one product**. We match Bulwark's existing visual language (read from `../s8s-mail-webmail`, v1.14.2) rather than inventing our own. We copy token *values*, not Bulwark code.
 
