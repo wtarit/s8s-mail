@@ -6,7 +6,7 @@ export default defineConfig({
   test: {
     projects: [
       "server/vitest.config.ts",
-      "web/vite.config.ts",
+      "web/vitest.config.ts",
       { test: { name: "shared", root: "shared", include: ["src/**/*.test.ts"] } },
     ],
     coverage: {

@@ -9,6 +9,7 @@ Serverless JMAP mail server on Cloudflare Workers. Features, architecture and co
 - Before finishing a change: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
 - **Max 300 lines per file**, tests included (oxlint `max-lines`). Split along real seams and keep the import path stable (`foo.ts` → `foo/index.ts`).
 - After editing `wrangler.jsonc`, run `pnpm cf-typegen`: `server/worker-configuration.d.ts` is committed.
+- **Vite builds and serves everything** (`vite.config.ts`, Cloudflare Vite plugin). Deploy only `dist/wrangler.json` from a full `pnpm build`: a Worker-only Vite build silently drops `assets`. Wrangler `rules` are ignored by Vite; `.sql` and `.wasm` imports work without them.
 - After changing the Better Auth plugin set, regenerate the schema: `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts` (the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`. `auth migrate` cannot reach D1.
 
 ## Ask the owner first

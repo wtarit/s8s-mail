@@ -24,10 +24,12 @@ CLOUDFLARE_ACCOUNT_ID=<account id> pnpm wrangler r2 bucket create s8s-mail-blobs
 
 ## 3. Deploy the main Worker
 
+Build with the local config, then deploy what the build wrote. `dist/wrangler.json` is a snapshot of `wrangler.local.jsonc` that points at the built Worker and `web/dist`; deploying `wrangler.local.jsonc` itself would bundle the source with Wrangler's esbuild instead, which fails on the `.sql` imports.
+
 ```bash
-pnpm build
+S8S_WRANGLER_CONFIG=wrangler.local.jsonc pnpm build
 pnpm wrangler d1 migrations apply DB --remote -c wrangler.local.jsonc
-pnpm wrangler deploy -c wrangler.local.jsonc
+pnpm wrangler deploy -c dist/wrangler.json
 ```
 
 Then set the secrets once. They persist across later deploys, so only re-run this to rotate one:
