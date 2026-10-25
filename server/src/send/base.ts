@@ -1,14 +1,6 @@
 import type { OutboundMessage, SendProvider, SendResult } from "./types";
 import { SendError } from "./types";
 
-/**
- * Secrets the send module reads that are not in the generated `Env`.
- * `MAILGUN_API` is a secret (`wrangler secret put MAILGUN_API`).
- */
-export interface SendEnv {
-  MAILGUN_API?: string;
-}
-
 /** Common size/recipient enforcement; subclasses implement `deliver`. */
 export abstract class BaseProvider implements SendProvider {
   abstract readonly name: SendProvider["name"];

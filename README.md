@@ -2,14 +2,14 @@
 S(erveles)s Mail - Email server on Cloudflare worker.
 
 ## Background
-I want a low (or ideally) no maintainance email server that have $0 running cost. It need to be usable in Cloudflare worker free tier because for worker paid, the minimum is $5 and at that price you can get a VPS and run [mail-in-a-box](https://github.com/mail-in-a-box/mailinabox) or [stalwart](https://stalw.art/).
+I want a low (or ideally no) maintenance email server that has $0 running cost. It needs to be usable on the Cloudflare Workers free tier, because for Workers Paid the minimum is $5, and at that price you can get a VPS and run [mail-in-a-box](https://mailinabox.email/) or [stalwart](https://stalw.art/).
 
 ## Features
 
 **Mail**
 - Receives mail through Cloudflare Email Routing (Worker `email()` handler).
-- Mailboxes are served over **JMAP only** (RFC 8620 core, RFC 8621 mail). Email only: no CardDAV/CalDAV, no contacts or calendars.
-- Outbound goes through a pluggable provider. V1 ships Mailgun (HTTP API), one active provider per deployment.
+- Mailboxes are served over **JMAP only** (RFC 8620 core, RFC 8621 mail). Email only: no CardDAV/CalDAV.
+- Outbound goes through a pluggable provider. V1 ships Mailgun (HTTP API), one active provider per deployment (see [Considerations in choosing an outbound email provider](docs/email-sending-provider.md) for full details).
 
 **Accounts and addresses**
 - Multi-user. Admins create accounts and hand over an invite link; there is no public signup.
@@ -103,5 +103,4 @@ The webmail download is cached in `node_modules/.cache/s8s-webmail`, and `pnpm w
 - **25 MiB inbound maximum** (Email Routing). Mailgun accepts 25 MB per message, so the advertised `maxSizeAttachmentsPerEmail` is that limit minus MIME/base64 overhead, and `EmailSubmission/set` enforces it.
 - **No spam filtering.** Email Routing's SPF/DKIM/DMARC/RBL rejection is the only filter.
 - **Password length is enforced in the browser only.** An OPAQUE server never sees the password, so it cannot check it.
-- **CPU fit on Free is not proven end to end.** The OPAQUE server operations fit the budget in an isolated probe. The full authentication endpoints, large-MIME parsing and outgoing MIME with attachments still need measuring on a deployment.
-- **Outbound mail is the one external dependency** (Mailgun).
+- **CPU fit on Free is not proven end to end.** The OPAQUE server operations fit the budget in an isolated probe. Large-MIME parsing and outgoing MIME with attachments still need measuring on a deployment.

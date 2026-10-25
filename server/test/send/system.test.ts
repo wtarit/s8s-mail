@@ -10,7 +10,7 @@ const env = (over: Record<string, unknown> = {}) =>
     MAIL_PROVIDER: "mailgun",
     MAILGUN_REGION: "us",
     MAILGUN_DOMAIN: "mg.example.com",
-    MAILGUN_API: "key-test",
+    MAIL_PROVIDER_API_KEY: "key-test",
     SYSTEM_MAIL_FROM: "S8S Mail <no-reply@example.com>",
     ...over,
   }) as unknown as Env;

@@ -11,5 +11,5 @@ BETTER_AUTH_SECRET=replace-with-a-long-random-string-at-least-32-chars
 # Generate with `openssl rand -base64 32` and delete the secret after bootstrapping.
 BOOTSTRAP_TOKEN=replace-with-a-random-token
 
-# Mailgun API key for the send module (see server/src/send).
-MAILGUN_API=
+# API key of the configured MAIL_PROVIDER (see server/src/send).
+MAIL_PROVIDER_API_KEY=
