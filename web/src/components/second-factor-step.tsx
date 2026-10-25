@@ -1,4 +1,4 @@
-import type { FactorName } from "@s8s/shared";
+import type { FactorName } from "#shared";
 import { IconFingerprint } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { FormError } from "@/components/form-error";

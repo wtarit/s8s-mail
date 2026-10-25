@@ -1,4 +1,4 @@
-import { pendingSignInResponse, type PendingSignInResponse } from "@s8s/shared";
+import { pendingSignInResponse, type PendingSignInResponse } from "#shared";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 

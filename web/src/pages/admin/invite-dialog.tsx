@@ -1,4 +1,4 @@
-import { newInviteResponse, type AdminUser, type Invite } from "@s8s/shared";
+import { newInviteResponse, type AdminUser, type Invite } from "#shared";
 import { useState } from "react";
 import { FormError } from "@/components/form-error";
 import { InviteResult } from "@/components/invite-result";

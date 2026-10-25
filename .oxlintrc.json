@@ -28,6 +28,54 @@
     {
       "files": ["server/src/db/auth-schema.ts", "web/src/i18n/en.ts"],
       "rules": { "max-lines": "off" }
+    },
+    {
+      "files": ["server/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/web/**", "**/shared/**"],
+                "message": "The server must work without the frontend. Import shared code from #shared."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["web/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/server/**", "**/shared/**"],
+                "message": "The SPA talks to the server over HTTP only. Import shared code from #shared."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["shared/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/server/**", "**/web/**"],
+                "message": "shared/ is imported by both sides and must not depend on either."
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "ignorePatterns": [

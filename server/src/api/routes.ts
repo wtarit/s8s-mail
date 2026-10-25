@@ -1,4 +1,4 @@
-import { createOAuthClientRequest, createUserRequest } from "@s8s/shared";
+import { createOAuthClientRequest, createUserRequest } from "#shared";
 import { count } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";

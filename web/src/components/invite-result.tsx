@@ -1,4 +1,4 @@
-import type { Invite } from "@s8s/shared";
+import type { Invite } from "#shared";
 import { Callout } from "@/components/callout";
 import { CopyField } from "@/components/copy-field";
 import { formatDateTime } from "@/lib/format";

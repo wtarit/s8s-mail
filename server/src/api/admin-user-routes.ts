@@ -1,4 +1,4 @@
-import { addAliasRequest, createUserRequest, updateUserRequest, type AdminUser } from "@s8s/shared";
+import { addAliasRequest, createUserRequest, updateUserRequest, type AdminUser } from "#shared";
 import { and, asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getAuth } from "../auth";

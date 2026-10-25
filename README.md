@@ -30,12 +30,15 @@ I want a low (or ideally) no maintainance email server that have $0 running cost
 ## Architecture
 
 ```
+wrangler.jsonc  the one Worker config (tracked placeholders; real values in wrangler.local.jsonc)
 server/         the Worker: JMAP API, Better Auth, /.well-known/*, email() handler, Durable Object classes
 web/            auth/account/admin SPA, plus the webmail download (served by the Worker from web/dist)
-shared/         types and schemas shared by server and web
+shared/         types and schemas shared by server and web, imported as `#shared`
 docs/           deploy guide, design system, account security spec
 docs/research/  dated research notes. Not authoritative.
 ```
+
+One package (one `package.json`, one `node_modules`), three source folders. Each folder has its own `tsconfig.json` (Worker types vs DOM) and its own vitest project (workerd, jsdom, Node). oxlint forbids imports across folders: `server/` and `web/` share code only through `#shared`, and `server/` never imports `web/`.
 
 Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`, `db`, `store`).
 
@@ -54,7 +57,7 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 
 ## Tech stack
 
-- TypeScript in a pnpm workspace (`server`, `web`, `shared`).
+- TypeScript, one pnpm package with `server/`, `web/` and `shared/` folders.
 - Server: Cloudflare Workers, [Hono](https://hono.dev), [Better Auth](https://better-auth.com) (passkey, OAuth provider, API key, admin, magic link, plus our OPAQUE plugin).
 - Data: Drizzle ORM for D1 and for the account DOs (`drizzle-orm/durable-sqlite`).
 - Validation: Zod v4, with `@hono/zod-validator` on SPA API routes.
@@ -68,27 +71,28 @@ Run from the repo root. Needs Node 24+ and pnpm 12 (`packageManager` in `package
 ```bash
 pnpm install
 pnpm dev                 # wrangler dev on http://localhost:8787 (Worker + web/dist)
-pnpm --filter @s8s/web dev   # SPA hot reload (Vite; proxies /api, /jmap, /.well-known to :8787)
-pnpm build               # shared, then web (web/dist + webmail), then a wrangler deploy --dry-run of server
+pnpm dev:web             # SPA hot reload (Vite; proxies /api, /jmap, /.well-known to :8787)
+pnpm build               # typecheck, web (web/dist + webmail), then a wrangler deploy --dry-run
 pnpm lint                # oxlint
 pnpm format              # oxfmt  (pnpm format:check to verify only)
-pnpm typecheck
-pnpm test                # vitest in every package
-pnpm coverage            # istanbul; per-package thresholds fail the run on regression
-pnpm --filter @s8s/server test   # one package (also @s8s/web, @s8s/shared)
+pnpm typecheck           # one tsc per folder
+pnpm test                # vitest: server (workerd), web (jsdom), shared projects
+pnpm coverage            # istanbul; per-folder thresholds fail the run on regression
+pnpm test --project server   # one project (also web, shared)
+pnpm wrangler <command>  # any wrangler command; it reads ./wrangler.jsonc and ./.dev.vars
 ```
 
-Server database and config scripts (run in `server/`, or `pnpm --filter @s8s/server <script>`):
+Database and config scripts, also run from the root:
 
-- `db:generate:d1`: D1 schema `src/db/schema.ts` to `drizzle/d1/`. Apply with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy.
-- `db:generate:do`: account-DO schema `src/store/schema.ts` to `drizzle/do/`. `AccountDO` applies it on startup.
-- `cf-typegen`: regenerates the committed `worker-configuration.d.ts`. Run it after any `wrangler.jsonc` change.
+- `db:generate:d1`: D1 schema `server/src/db/schema.ts` to `server/drizzle/d1/`. Apply with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy.
+- `db:generate:do`: account-DO schema `server/src/store/schema.ts` to `server/drizzle/do/`. `AccountDO` applies it on startup.
+- `cf-typegen`: regenerates the committed `server/worker-configuration.d.ts`. Run it after any `wrangler.jsonc` change.
 - `opaque:setup`: creates `OPAQUE_SERVER_SETUP` in the ignored `.dev.vars`. Run once; see `server/src/auth/README.md`.
-- Better Auth schema: when the plugin set changes, regenerate `src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
+- Better Auth schema: when the plugin set changes, regenerate `server/src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
 
-The webmail download is cached in `web/node_modules/.cache`. `WEBMAIL_ZIP=/path/to.zip` builds with a local Lite build instead, and `WEBMAIL_SKIP=1` skips it. To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
+The webmail download is cached in `node_modules/.cache/s8s-webmail`. `WEBMAIL_ZIP=/path/to.zip` builds with a local Lite build instead, and `WEBMAIL_SKIP=1` skips it. To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
 
-`server/wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
+`wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
 
 ## Limits and compromises
 

@@ -1,4 +1,4 @@
-import { apiError } from "@s8s/shared";
+import { apiError } from "#shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
 import { BOOTSTRAP_TOKEN, request, resetDb, type Json } from "../helpers";

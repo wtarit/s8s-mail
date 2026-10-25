@@ -1,4 +1,4 @@
-import { meResponse, type MeResponse } from "@s8s/shared";
+import { meResponse, type MeResponse } from "#shared";
 import { createContext, useContext, type ReactNode } from "react";
 import { Navigate, useLocation } from "react-router";
 import { LoadError } from "@/components/load-error";

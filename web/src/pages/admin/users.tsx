@@ -1,4 +1,4 @@
-import { adminUserListResponse, type AdminUser } from "@s8s/shared";
+import { adminUserListResponse, type AdminUser } from "#shared";
 import {
   IconAt,
   IconDots,

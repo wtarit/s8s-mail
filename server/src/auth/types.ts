@@ -1,4 +1,4 @@
-import type { Role } from "@s8s/shared";
+import type { Role } from "#shared";
 
 /** Who is calling the JMAP API. Set on the Hono context by `jmapAuth`. */
 export interface Principal {

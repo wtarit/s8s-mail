@@ -1,4 +1,4 @@
-import { addDomainRequest, domainListResponse, type adminDomain } from "@s8s/shared";
+import { addDomainRequest, domainListResponse, type adminDomain } from "#shared";
 import { IconAt, IconPlus, IconTrash, IconWorld } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";

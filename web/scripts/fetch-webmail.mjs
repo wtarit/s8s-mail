@@ -15,7 +15,7 @@ const RELEASES = "https://github.com/wtarit/s8s-mail-webmail/releases/download";
 const pin = JSON.parse(await readFile(new URL("../webmail.json", import.meta.url), "utf8"));
 const dist = new URL("../dist/", import.meta.url);
 const output = new URL("webmail/", dist);
-const cache = new URL(`../node_modules/.cache/s8s-webmail/${pin.version}.zip`, import.meta.url);
+const cache = new URL(`../../node_modules/.cache/s8s-webmail/${pin.version}.zip`, import.meta.url);
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 // Served by the Worker (config.json) or by the Worker's routing (_redirects), or not needed.

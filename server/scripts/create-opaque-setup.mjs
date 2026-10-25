@@ -8,13 +8,13 @@ import { ready, server } from "@serenity-kit/opaque";
 // Deliberately manual: never create or rotate this secret during startup/build.
 // Keeping it in .dev.vars lets Wrangler load it locally without exposing it on
 // stdout, in a shell argument, or in a tracked configuration file.
-const serverRoot = fileURLToPath(new URL("../", import.meta.url));
-const destination = fileURLToPath(new URL("../.dev.vars", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const destination = fileURLToPath(new URL("../../.dev.vars", import.meta.url));
 execFileSync("git", ["check-ignore", "--quiet", "--no-index", destination], {
-  cwd: serverRoot,
+  cwd: repoRoot,
 });
 const tracked = execFileSync("git", ["ls-files", "--", destination], {
-  cwd: serverRoot,
+  cwd: repoRoot,
   encoding: "utf8",
 });
 assert.equal(tracked, "", "Refusing to write an OPAQUE secret to a tracked file");
@@ -47,4 +47,4 @@ try {
   await lock.close();
   await unlink(lockPath);
 }
-console.info("Added OPAQUE_SERVER_SETUP to server/.dev.vars (mode 0600); value was not printed.");
+console.info("Added OPAQUE_SERVER_SETUP to .dev.vars (mode 0600); value was not printed.");

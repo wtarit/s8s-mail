@@ -1,18 +1,22 @@
 # Deploying s8s-mail
 
-Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored `server/wrangler.local.jsonc` or in Worker secrets. `mail.example.com` stands in for your hostname.
+Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored `wrangler.local.jsonc` or in Worker secrets. `mail.example.com` stands in for your hostname. Run every command from the repo root.
 
 ## 1. Resources (once)
 
+Check which account Wrangler will use first. Without an `account_id` in the config it falls back to a cached account (`node_modules/.cache/wrangler`), which can be stale after you switch accounts:
+
 ```bash
-pnpm --filter @s8s/server exec wrangler d1 create s8s-mail
-pnpm --filter @s8s/server exec wrangler r2 bucket create s8s-mail-blobs
+pnpm wrangler whoami
+CLOUDFLARE_ACCOUNT_ID=<account id> pnpm wrangler d1 create s8s-mail
+CLOUDFLARE_ACCOUNT_ID=<account id> pnpm wrangler r2 bucket create s8s-mail-blobs
 ```
 
 ## 2. Local deploy config (gitignored)
 
-1. Copy `server/wrangler.jsonc` to `server/wrangler.local.jsonc`.
+1. Copy `wrangler.jsonc` to `wrangler.local.jsonc`.
 2. Set:
+   - `account_id`, so every `-c wrangler.local.jsonc` command targets this account whatever is cached;
    - the real `database_id`;
    - `PUBLIC_URL` (`https://mail.example.com`);
    - `MAILGUN_DOMAIN`, `SYSTEM_MAIL_FROM`;
@@ -22,27 +26,26 @@ pnpm --filter @s8s/server exec wrangler r2 bucket create s8s-mail-blobs
 
 ```bash
 pnpm build
-cd server
-pnpm exec wrangler d1 migrations apply DB --remote -c wrangler.local.jsonc
-pnpm exec wrangler deploy -c wrangler.local.jsonc
+pnpm wrangler d1 migrations apply DB --remote -c wrangler.local.jsonc
+pnpm wrangler deploy -c wrangler.local.jsonc
 ```
 
 Then set the secrets once. They persist across later deploys, so only re-run this to rotate one:
 
 ```bash
-pnpm exec wrangler secret put BETTER_AUTH_SECRET -c wrangler.local.jsonc  # openssl rand -base64 48
-pnpm exec wrangler secret put BOOTSTRAP_TOKEN -c wrangler.local.jsonc     # openssl rand -hex 32
-pnpm exec wrangler secret put MAILGUN_API -c wrangler.local.jsonc
+pnpm wrangler secret put BETTER_AUTH_SECRET -c wrangler.local.jsonc  # openssl rand -base64 48
+pnpm wrangler secret put BOOTSTRAP_TOKEN -c wrangler.local.jsonc     # openssl rand -hex 32
+pnpm wrangler secret put MAILGUN_API -c wrangler.local.jsonc
 ```
 
 `OPAQUE_SERVER_SETUP` is the OPAQUE server key (see `server/src/auth/README.md`). Every password depends on it, so create it once and keep a copy: if it is lost or changed, all passwords stop working. This writes it to the gitignored `.dev.vars.deploy` and uploads it without printing it:
 
 ```bash
 (umask 077; node --input-type=module -e 'import { ready, server } from "@serenity-kit/opaque"; await ready; process.stdout.write(`OPAQUE_SERVER_SETUP=${server.createSetup()}\n`)' > .dev.vars.deploy)
-sed -n 's/^OPAQUE_SERVER_SETUP=//p' .dev.vars.deploy | pnpm exec wrangler secret put OPAQUE_SERVER_SETUP -c wrangler.local.jsonc
+sed -n 's/^OPAQUE_SERVER_SETUP=//p' .dev.vars.deploy | pnpm wrangler secret put OPAQUE_SERVER_SETUP -c wrangler.local.jsonc
 ```
 
-Use production values that differ from your local `server/.dev.vars`. Keep `BOOTSTRAP_TOKEN` at hand for step 5.
+Use production values that differ from your local `.dev.vars`. Keep `BOOTSTRAP_TOKEN` at hand for step 5.
 
 Account Durable Objects migrate themselves on first use.
 

@@ -1,4 +1,4 @@
-import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig, type MeResponse } from "@s8s/shared";
+import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig, type MeResponse } from "#shared";
 import { render } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { vi } from "vitest";

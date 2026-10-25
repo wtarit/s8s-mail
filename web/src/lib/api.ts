@@ -1,4 +1,4 @@
-import { apiError } from "@s8s/shared";
+import { apiError } from "#shared";
 import type { z } from "zod";
 import { getApiBase } from "@/lib/api-base";
 import { t } from "@/i18n";
@@ -63,7 +63,7 @@ async function request(path: string, init: ApiInit): Promise<Response> {
   return response;
 }
 
-/** Call one of our endpoints and validate the JSON body with a `@s8s/shared` schema. */
+/** Call one of our endpoints and validate the JSON body with a `#shared` schema. */
 export async function api<S extends z.ZodType>(
   path: string,
   schema: S,

@@ -1,4 +1,4 @@
-import type { InviteInfoResponse } from "@s8s/shared";
+import type { InviteInfoResponse } from "#shared";
 import { eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { getAuth } from "../auth";

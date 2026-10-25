@@ -1,7 +1,7 @@
 {
-  "$schema": "../node_modules/wrangler/config-schema.json",
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "s8s-mail",
-  "main": "src/index.ts",
+  "main": "server/src/index.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
@@ -10,10 +10,10 @@
 
   // The SPA and the webmail under /webmail/ (web/dist, see `pnpm build`). Files are served
   // without running the Worker; a path with no file goes to the Worker, which answers with
-  // the SPA's index.html or the webmail's deep-link shell (src/assets.ts). Worker routes
+  // the SPA's index.html or the webmail's deep-link shell (server/src/assets.ts). Worker routes
   // stay in run_worker_first so that a file can never shadow them.
   "assets": {
-    "directory": "../web/dist",
+    "directory": "web/dist",
     "binding": "ASSETS",
     "not_found_handling": "none",
     "run_worker_first": ["/api/*", "/jmap/*", "/.well-known/*"],
@@ -28,7 +28,7 @@
       "database_name": "s8s-mail",
       // TODO(deploy): placeholder. Replace with the real id from `wrangler d1 create s8s-mail`.
       "database_id": "00000000-0000-0000-0000-000000000000",
-      "migrations_dir": "drizzle/d1",
+      "migrations_dir": "server/drizzle/d1",
     },
   ],
 

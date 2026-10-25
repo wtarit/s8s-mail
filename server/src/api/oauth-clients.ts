@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import type { createOAuthClientRequest, oauthClient } from "@s8s/shared";
+import type { createOAuthClientRequest, oauthClient } from "#shared";
 import { eq } from "drizzle-orm";
 import { getAuth, type Auth } from "../auth";
 import { OAUTH_SCOPES, jmapResource, publicOrigin } from "../auth/config";

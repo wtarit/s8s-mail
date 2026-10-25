@@ -48,7 +48,7 @@ Account changes are setting or changing the password, adding or removing a passk
 - Passwords use OPAQUE (`@serenity-kit/opaque`) through application-owned Better Auth server and client plugins. No server-side password KDF runs.
 - Password stretching runs in an ephemeral browser Web Worker. Passwords and client state never go over HTTP. The server stores OPAQUE registration records against immutable user IDs.
 - Login handshake state is encrypted in D1 (it contains the value the client must return), expires after five minutes, and is atomically consumed on completion. Registration is stateless on the server.
-- `OPAQUE_SERVER_SETUP` is generated once (`pnpm --filter @s8s/server opaque:setup`) and must persist. Keep it **separate from `BETTER_AUTH_SECRET`**. Losing or changing it invalidates every password registration.
+- `OPAQUE_SERVER_SETUP` is generated once (`pnpm opaque:setup`) and must persist. Keep it **separate from `BETTER_AUTH_SECRET`**. Losing or changing it invalidates every password registration.
 - **No legacy password path.** There are no plaintext or server-hashed passwords to fall back to.
 - The server cannot see the password, so the password length policy is enforced in the browser only.
 

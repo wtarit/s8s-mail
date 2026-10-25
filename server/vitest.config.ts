@@ -9,7 +9,7 @@ export default defineConfig(async () => {
   return {
     plugins: [
       cloudflareTest({
-        wrangler: { configPath: "./wrangler.jsonc" },
+        wrangler: { configPath: path.join(import.meta.dirname, "../wrangler.jsonc") },
         miniflare: {
           bindings: {
             // Secrets are not in wrangler.jsonc; tests provide their own.
@@ -22,21 +22,13 @@ export default defineConfig(async () => {
       }),
     ],
     test: {
+      name: "server",
       include: ["test/**/*.test.ts"],
       setupFiles: ["./test/helpers/setup.ts"],
       // The first request in a file cold-starts the Worker + DO (module loading takes seconds
-      // under load, e.g. when `pnpm -r test` runs web and server tests in parallel).
+      // under load, e.g. when the web and server projects run in parallel).
       testTimeout: 30_000,
       hookTimeout: 30_000,
-      coverage: {
-        // Istanbul, not V8: V8 coverage is unsupported inside workerd.
-        provider: "istanbul" as const,
-        include: ["src/**/*.ts"],
-        exclude: ["src/**/*.test.ts", "src/**/*.d.ts", "src/db/auth-schema.ts"],
-        reporter: ["text-summary", "html"],
-        reportsDirectory: "coverage",
-        thresholds: { lines: 90, statements: 88, functions: 89, branches: 76 },
-      },
     },
   };
 });

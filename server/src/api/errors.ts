@@ -1,4 +1,4 @@
-import type { ApiError } from "@s8s/shared";
+import type { ApiError } from "#shared";
 import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { errorFields } from "../log";

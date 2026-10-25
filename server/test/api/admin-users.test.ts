@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { adminUser, apiError, inviteInfoResponse, meResponse } from "@s8s/shared";
+import { adminUser, apiError, inviteInfoResponse, meResponse } from "#shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sendSystemMail } from "../../src/send";
 import { request, resetDb, tokenFromInviteUrl, type Session, type Json } from "../helpers";

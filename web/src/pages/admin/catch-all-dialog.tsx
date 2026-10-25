@@ -1,4 +1,4 @@
-import { adminAddressListResponse, domainListResponse, type AdminDomain } from "@s8s/shared";
+import { adminAddressListResponse, domainListResponse, type AdminDomain } from "#shared";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { FormError } from "@/components/form-error";
