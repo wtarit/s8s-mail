@@ -8,8 +8,8 @@
   },
   "scripts": {
     "wrangler": "wrangler",
-    "dev": "pnpm opaque:prepare && vite dev",
-    "build": "pnpm typecheck && vite build && node web/scripts/fetch-webmail.mjs",
+    "dev": "pnpm opaque:prepare && pnpm webmail && vite dev",
+    "build": "pnpm typecheck && pnpm webmail && vite build",
     "preview": "vite preview",
     "lint": "oxlint",
     "format": "oxfmt",
@@ -22,7 +22,8 @@
     "db:generate:do": "drizzle-kit generate --config server/drizzle.config.do.ts",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "opaque:prepare": "node server/scripts/prepare-opaque.mjs",
-    "opaque:setup": "node server/scripts/create-opaque-setup.mjs"
+    "opaque:setup": "node server/scripts/create-opaque-setup.mjs",
+    "webmail": "node web/scripts/fetch-webmail.mjs"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.7",

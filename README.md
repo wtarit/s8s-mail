@@ -24,7 +24,7 @@ I want a low (or ideally) no maintainance email server that have $0 running cost
 
 **Frontends**
 - The auth/account/admin SPA is a static bundle. By default the main Worker serves it; it can also be deployed headless, with the API base URL set in a runtime `config.json`.
-- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see the note at the top of its README). `pnpm build` downloads the release pinned in `web/webmail.json` into `web/dist/webmail/`, and the Worker serves it at `/webmail/`, with its `config.json` generated from the Worker's vars.
+- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see the note at the top of its README). `pnpm dev` and `pnpm build` download the release pinned in `web/webmail.json` into the gitignored `web/public/webmail/` (the build copies it into `web/dist/webmail/`), and the Worker serves it at `/webmail/`, with its `config.json` generated from the Worker's vars.
 - Both are optional: without the `assets` block in `wrangler.jsonc`, the Worker is API-only.
 
 ## Architecture
@@ -67,13 +67,13 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 
 ## Development
 
-Run from the repo root. Needs Node 24+ and pnpm 12 (`packageManager` in `package.json`; use Corepack).
+Run from the repo root. Needs Node 24+ and pnpm 12.
 
 ```bash
 pnpm install
-pnpm dev                 # vite dev on http://localhost:8787: SPA with hot reload + the Worker in workerd
-pnpm build               # typecheck, vite build (web/dist + dist/), then the webmail into web/dist/webmail
-pnpm preview             # the built app, webmail included, on :8787
+pnpm dev                 # vite dev on http://localhost:8787: SPA with hot reload, the Worker in workerd, the webmail
+pnpm build               # typecheck, webmail, then vite build (web/dist + dist/)
+pnpm preview             # the built app on :8787
 pnpm lint                # oxlint
 pnpm format              # oxfmt  (pnpm format:check to verify only)
 pnpm typecheck           # one tsc per folder
@@ -91,9 +91,9 @@ Database and config scripts, also run from the root:
 - `opaque:setup`: creates `OPAQUE_SERVER_SETUP` in the ignored `.dev.vars`. Run once; see `server/src/auth/README.md`.
 - Better Auth schema: when the plugin set changes, regenerate `server/src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
 
-`pnpm dev` has no webmail (`/webmail/` is a 404): it is only downloaded by `pnpm build`, so use `pnpm preview` to try it. Local D1, DO and R2 data live in `.wrangler/state` for both. The build also copies the secrets from `.dev.vars` to `dist/.dev.vars` (mode 0600) for `vite preview`; `wrangler deploy` does not upload it.
+Local D1, DO and R2 data live in `.wrangler/state` for both `pnpm dev` and `pnpm preview`. The build also copies the secrets from `.dev.vars` to `dist/.dev.vars` (mode 0600) for `vite preview`; `wrangler deploy` does not upload it.
 
-The webmail download is cached in `node_modules/.cache/s8s-webmail`. `WEBMAIL_ZIP=/path/to.zip` builds with a local Lite build instead, and `WEBMAIL_SKIP=1` skips it. To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
+The webmail download is cached in `node_modules/.cache/s8s-webmail`, and `pnpm webmail` only re-extracts it when the pinned version changes. `WEBMAIL_ZIP=/path/to.zip` uses a local Lite build instead, and `WEBMAIL_SKIP=1` removes it (`/webmail/` then serves a 404). To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
 
 `wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
 

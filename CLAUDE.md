@@ -19,7 +19,7 @@ Serverless JMAP mail server on Cloudflare Workers. Features, architecture and co
 ## Private data
 
 - The test zone, hostnames, Mailgun domain and test mailbox are in `CLAUDE.local.md` (gitignored). Read it before deploying or running end-to-end mail tests.
-- **Never put personal addresses, the test domain or account details in tracked files**: code, wrangler config, fixtures, tests, docs or commit messages. Use `example.com`. Deployment-specific wrangler values go in the gitignored `wrangler.local.jsonc` (set `account_id` there).
+- **Never put personal addresses, the test domain or account details in tracked files**: code, wrangler config, fixtures, tests, docs or commit messages. Use `example.com`. Deployment-specific wrangler values go in the gitignored `wrangler.local.jsonc`.
 
 ## Scope guardrails
 

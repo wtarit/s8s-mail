@@ -4,19 +4,18 @@ Deployment-specific values (zone, hostnames, resource ids, secrets) never go in 
 
 ## 1. Resources (once)
 
-Check which account Wrangler will use first. Without an `account_id` in the config it falls back to a cached account (`node_modules/.cache/wrangler`), which can be stale after you switch accounts:
+Check which account Wrangler will use first.
 
 ```bash
 pnpm wrangler whoami
-CLOUDFLARE_ACCOUNT_ID=<account id> pnpm wrangler d1 create s8s-mail
-CLOUDFLARE_ACCOUNT_ID=<account id> pnpm wrangler r2 bucket create s8s-mail-blobs
+pnpm wrangler d1 create s8s-mail
+pnpm wrangler r2 bucket create s8s-mail-blobs
 ```
 
 ## 2. Local deploy config (gitignored)
 
 1. Copy `wrangler.jsonc` to `wrangler.local.jsonc`.
 2. Set:
-   - `account_id`, so every `-c wrangler.local.jsonc` command targets this account whatever is cached;
    - the real `database_id`;
    - `PUBLIC_URL` (`https://mail.example.com`);
    - `MAILGUN_DOMAIN`, `SYSTEM_MAIL_FROM`;
