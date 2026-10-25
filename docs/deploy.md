@@ -35,6 +35,13 @@ pnpm exec wrangler secret put BOOTSTRAP_TOKEN -c wrangler.local.jsonc     # open
 pnpm exec wrangler secret put MAILGUN_API -c wrangler.local.jsonc
 ```
 
+`OPAQUE_SERVER_SETUP` is the OPAQUE server key (see `server/src/auth/README.md`). Every password depends on it, so create it once and keep a copy: if it is lost or changed, all passwords stop working. This writes it to the gitignored `.dev.vars.deploy` and uploads it without printing it:
+
+```bash
+(umask 077; node --input-type=module -e 'import { ready, server } from "@serenity-kit/opaque"; await ready; process.stdout.write(`OPAQUE_SERVER_SETUP=${server.createSetup()}\n`)' > .dev.vars.deploy)
+sed -n 's/^OPAQUE_SERVER_SETUP=//p' .dev.vars.deploy | pnpm exec wrangler secret put OPAQUE_SERVER_SETUP -c wrangler.local.jsonc
+```
+
 Use production values that differ from your local `server/.dev.vars`. Keep `BOOTSTRAP_TOKEN` at hand for step 5.
 
 Account Durable Objects migrate themselves on first use.
