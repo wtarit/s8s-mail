@@ -24,10 +24,7 @@ import { sendSystemMailLazy } from "./system-mail";
 import { opaque } from "./opaque";
 
 /** The slice of `Env` the auth setup reads. */
-export type AuthEnv = Pick<
-  Env,
-  "DB" | "PUBLIC_URL" | "WEBMAIL_ORIGIN" | "APP_NAME" | "BETTER_AUTH_SECRET"
-> &
+export type AuthEnv = Pick<Env, "DB" | "PUBLIC_URL" | "APP_NAME" | "BETTER_AUTH_SECRET"> &
   Partial<Env> & {
     /** Origin of a separately deployed ("headless") SPA, if any. Optional. */
     SPA_ORIGIN?: string;
@@ -48,8 +45,8 @@ export function makeAuth(env: AuthEnv, database: BetterAuthOptions["database"]) 
     baseURL: env.PUBLIC_URL,
     basePath: AUTH_BASE_PATH,
     secret: env.BETTER_AUTH_SECRET,
-    // PUBLIC_URL (bundled SPA), the webmail, and an optional separately hosted SPA.
-    trustedOrigins: [origin, env.WEBMAIL_ORIGIN, env.SPA_ORIGIN].filter((o): o is string => !!o),
+    // PUBLIC_URL (bundled SPA and webmail) and an optional separately hosted SPA.
+    trustedOrigins: [origin, env.SPA_ORIGIN].filter((o): o is string => !!o),
     // Core plaintext-password and admin-created-user routes do not exist here (404). Passwords go
     // through the OPAQUE plugin, users are created by our admin API.
     disabledPaths: [

@@ -1,16 +1,11 @@
-import { exports } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { BASE, request, type Json } from "../helpers";
 
 vi.mock("../../src/send", () => ({ sendSystemMail: vi.fn(async () => {}) }));
 
-const WEBMAIL = "http://localhost:4173";
-
 describe("OIDC discovery at the origin root", () => {
   it("serves openid-configuration with the provider's endpoints", async () => {
-    const res = await request<Json>("/.well-known/openid-configuration", {
-      headers: { origin: WEBMAIL },
-    });
+    const res = await request<Json>("/.well-known/openid-configuration");
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       issuer: `${BASE}/api/auth`,
@@ -42,38 +37,10 @@ describe("OIDC discovery at the origin root", () => {
     expect(res.body.issuer).toBe(`${BASE}/api/auth`);
   });
 
-  it("allows only the webmail origin via CORS", async () => {
-    for (const path of [
-      "/.well-known/openid-configuration",
-      "/.well-known/oauth-authorization-server",
-      "/api/auth/jwks",
-    ]) {
-      const ok = await request(path, { headers: { origin: WEBMAIL } });
-      expect(ok.headers.get("access-control-allow-origin"), path).toBe(WEBMAIL);
-      const other = await request(path, { headers: { origin: "https://evil.example" } });
-      expect(other.headers.get("access-control-allow-origin"), path).toBeNull();
-    }
-  });
-
-  it("answers preflights for the token endpoint and /jmap with Authorization allowed", async () => {
-    for (const path of ["/api/auth/oauth2/token", "/api/auth/oauth2/userinfo", "/jmap/session"]) {
-      const res = await exports.default.fetch(
-        new Request(BASE + path, {
-          method: "OPTIONS",
-          headers: {
-            origin: WEBMAIL,
-            "access-control-request-method": "POST",
-            "access-control-request-headers": "authorization,content-type",
-          },
-        }),
-      );
-      expect(res.status, path).toBe(204);
-      expect(res.headers.get("access-control-allow-origin"), path).toBe(WEBMAIL);
-      expect(res.headers.get("access-control-allow-headers")!.toLowerCase(), path).toContain(
-        "authorization",
-      );
-      // Bearer tokens, not cookies
-      expect(res.headers.get("access-control-allow-credentials"), path).toBeNull();
+  it("sends no CORS headers: the webmail is served from the same origin", async () => {
+    for (const path of ["/.well-known/openid-configuration", "/api/auth/jwks"]) {
+      const res = await request(path, { headers: { origin: "https://evil.example" } });
+      expect(res.headers.get("access-control-allow-origin"), path).toBeNull();
     }
   });
 

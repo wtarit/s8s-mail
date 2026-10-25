@@ -61,6 +61,11 @@ export function isOAuthResumeUrl(target: string): boolean {
   }
 }
 
+/** Full-page navigation to a URL outside the SPA (e.g. the webmail), replacing this history entry. */
+export function leaveApp(url: string): void {
+  window.location.replace(url);
+}
+
 /** `/login` URL that returns to `next` after sign-in. */
 export function loginPath(next?: string): string {
   const safe = safeNextPath(next, "");

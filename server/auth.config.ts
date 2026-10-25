@@ -8,7 +8,6 @@ export const auth = makeAuth(
   {
     DB: undefined as unknown as D1Database,
     PUBLIC_URL: "http://localhost:8787",
-    WEBMAIL_ORIGIN: "http://localhost:4173",
     APP_NAME: "S8S Mail",
     BETTER_AUTH_SECRET: "schema-generation-only-secret-0000000000000000",
   },

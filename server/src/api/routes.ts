@@ -76,7 +76,7 @@ admin.post("/oauth-clients", validate("json", createOAuthClientRequest), async (
   return c.json(result, 201);
 });
 
-/** Idempotently (re)creates the first-party webmail client from BULWARK_CLIENT_ID / WEBMAIL_ORIGIN. */
+/** Idempotently (re)creates the first-party webmail client from BULWARK_CLIENT_ID / PUBLIC_URL. */
 admin.post("/oauth-clients/ensure-defaults", async (c) =>
   c.json({ client: await ensureBulwarkClient(c.env) }),
 );

@@ -33,7 +33,8 @@ Serverless JMAP mail server on Cloudflare Workers. Features, architecture and co
 - **10 ms CPU per invocation**, Durable Objects included. Light testing can pass while production fails: measure CPU, don't eyeball it. Gate Paid-only features behind config and say so.
 - 128 MB memory: never hold more than one copy of a 25 MiB message. `message.raw` is a single-use stream. Keep `email()` minimal and defer heavy parsing.
 - 50 subrequests per invocation. 100k D1 writes/day, so no writes on hot paths.
-- Paths a browser navigates to (OAuth authorize, `/.well-known/*`, attachment downloads) must be in `assets.run_worker_first`, or they silently return the SPA.
+- Static assets use `not_found_handling: "none"`: only paths with no file reach the Worker, which serves the SPA's index.html and the webmail's deep links (`server/src/assets.ts`). Keep Worker routes in `assets.run_worker_first` anyway, so a file can never shadow them.
+- **The server must work without the frontend.** Without the `assets` block there is no `ASSETS` binding and the Worker is API-only: no server code or test may depend on a built SPA or webmail.
 
 ## Storage invariants
 

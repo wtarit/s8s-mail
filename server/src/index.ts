@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { api } from "./api/routes";
+import { serveAssetMiss } from "./assets";
 import { authServerMetadata, getAuth, openIdConfig } from "./auth";
 import { runWithWaitUntil } from "./auth/request-context";
 import type { AppEnv } from "./auth/types";
@@ -24,20 +24,6 @@ app.use("*", async (c, next) => {
   }
   await runWithWaitUntil((p) => ctx?.waitUntil(p), next);
 });
-
-// The webmail (another origin) calls discovery, the token endpoint and JMAP from the browser.
-// Bearer tokens only: no credentials.
-const webmailCors = cors({
-  origin: (origin, c) => (origin === c.env.WEBMAIL_ORIGIN ? origin : null),
-  allowMethods: ["GET", "POST", "OPTIONS"],
-  allowHeaders: ["Authorization", "Content-Type", "Accept"],
-  exposeHeaders: ["WWW-Authenticate"],
-  maxAge: 86400,
-});
-app.use("/.well-known/*", webmailCors);
-app.use("/jmap/*", webmailCors);
-app.use("/api/auth/oauth2/*", webmailCors);
-app.use("/api/auth/jwks", webmailCors);
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
@@ -66,6 +52,13 @@ app.route("/api", api);
 app.get("/.well-known/jmap", wellKnownJmap);
 app.use("/jmap/*", jmapAuth);
 app.route("/jmap", jmapApp);
+
+// No static asset at this path: the SPA's client-side routes and the webmail (see ./assets).
+app.get("*", (c) =>
+  /^\/(api|jmap|\.well-known)(\/|$)/.test(c.req.path)
+    ? c.notFound()
+    : serveAssetMiss(c.req.raw, c.env),
+);
 
 export default {
   fetch: app.fetch,
