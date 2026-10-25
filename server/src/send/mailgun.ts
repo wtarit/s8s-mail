@@ -29,7 +29,7 @@ export class MailgunProvider extends BaseProvider {
     const { apiKey } = this.config;
     if (!apiKey) {
       throw new SendError(
-        "Mailgun is selected but the MAILGUN_API secret is not set",
+        "Mailgun is selected but the MAIL_PROVIDER_API_KEY secret is not set",
         false,
         "notConfigured",
       );

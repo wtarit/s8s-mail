@@ -30,6 +30,12 @@ pnpm wrangler secret put BETTER_AUTH_SECRET -c wrangler.local.jsonc  # openssl r
 pnpm wrangler secret put BOOTSTRAP_TOKEN -c wrangler.local.jsonc     # openssl rand -hex 32
 ```
 
+Set the API key of the provider in `MAIL_PROVIDER` (if you don't need to send email just yet you can set it to some random string).
+
+```bash
+pnpm wrangler secret put MAIL_PROVIDER_API_KEY -c wrangler.local.jsonc
+```
+
 `OPAQUE_SERVER_SETUP` is the OPAQUE server key (see `server/src/auth/README.md`). Every password depends on it, so create it once and keep a copy: if it is lost or changed, all passwords stop working. This writes it to the gitignored `.dev.vars.deploy` and uploads it without printing it:
 
 ```bash
@@ -69,13 +75,6 @@ curl -X POST https://mail.example.com/api/bootstrap \
 
 This only works while there are no users. The invite link goes to the recovery address and is also returned in the response.
 
-## 7. Email sending
-
-Setup mailgun api token
-
-```bash
-pnpm wrangler secret put MAILGUN_API -c wrangler.local.jsonc
-```
 
 ## Notes
 

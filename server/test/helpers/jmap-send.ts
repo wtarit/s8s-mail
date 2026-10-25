@@ -24,7 +24,7 @@ export let fetchSpy: ReturnType<typeof vi.spyOn>;
 /** Stubs global fetch with a Mailgun "Queued" reply (Mailgun is the configured provider). */
 export function installMailgunFetchMock() {
   beforeEach(() => {
-    (env as unknown as Record<string, string>).MAILGUN_API = "key-test";
+    (env as unknown as Record<string, string>).MAIL_PROVIDER_API_KEY = "key-test";
     fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
       async () =>
         new Response(JSON.stringify({ id: "<mg-1@example.com>", message: "Queued" }), {

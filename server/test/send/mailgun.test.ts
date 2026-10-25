@@ -119,7 +119,7 @@ describe("MailgunProvider", () => {
     expect(f).not.toHaveBeenCalled();
   });
 
-  it("fails clearly without the MAILGUN_API secret", async () => {
+  it("fails clearly without the MAIL_PROVIDER_API_KEY secret", async () => {
     const f = mockFetch(200, { id: "<x>" });
     await expect(
       provider("us", f as unknown as typeof fetch, null).send({
@@ -147,13 +147,13 @@ describe("getSendProvider", () => {
     expect(() => getSendProvider(env({ MAIL_PROVIDER: "sendgrid" }))).toThrow(SendError);
   });
 
-  it("builds the region from MAILGUN_REGION and the key from MAILGUN_API", async () => {
+  it("builds the region from MAILGUN_REGION and the key from MAIL_PROVIDER_API_KEY", async () => {
     const f = vi.fn(async (_u: string | URL | Request, _i?: RequestInit) =>
       Response.json({ id: "<i>" }),
     );
     vi.stubGlobal("fetch", f);
     try {
-      const p = getSendProvider(env({ MAILGUN_REGION: "eu", MAILGUN_API: "key-env" }));
+      const p = getSendProvider(env({ MAILGUN_REGION: "eu", MAIL_PROVIDER_API_KEY: "key-env" }));
       await p.send({ mailFrom: "a@example.com", rcptTo: ["b@example.com"], raw });
       expect(f.mock.calls[0]![0]).toContain("https://api.eu.mailgun.net/v3/mg.example.com/");
       expect((f.mock.calls[0]![1]!.headers as Record<string, string>).Authorization).toBe(
