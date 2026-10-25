@@ -50,7 +50,7 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 - A future shared mailbox is its own account (`isPersonal: false`), so its own DO, with grants in D1.
 - DO-specific code sits behind an `AccountStore` interface, so a self-hosted adapter stays possible.
 
-**Hostnames.** A deployment uses one hostname, `mail.<domain>`, for JMAP, the OIDC issuer, the SPA and the webmail (`/webmail/`). Everything is same-origin, so there is no CORS, and signing in to the webmail reuses the account session.
+**Hostnames.** A deployment uses one hostname, `mail.<domain>`, for JMAP, the OIDC issuer, the SPA and the webmail (`/webmail/`). The root goes to the webmail (the SPA's `config.json` sets `webmailUrl`; without it, `/` opens the account). Everything is same-origin, so there is no CORS, and signing in to the webmail reuses the account session.
 
 ## Tech stack
 

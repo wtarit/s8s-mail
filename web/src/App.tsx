@@ -17,6 +17,7 @@ import { LoginPage } from "@/pages/login";
 import { MagicLinkSentPage } from "@/pages/magic-link-sent";
 import { MagicLinkVerifyPage } from "@/pages/magic-link-verify";
 import { NotFoundPage } from "@/pages/not-found";
+import { RootPage } from "@/pages/root";
 
 // Admin screens are only needed by admins: keep them out of the main bundle.
 const UsersPage = lazy(() => import("@/pages/admin/users").then((m) => ({ default: m.UsersPage })));
@@ -59,7 +60,7 @@ export function AppRoutes() {
         </Route>
       </Route>
 
-      <Route path="/" element={<Navigate to="/account/profile" replace />} />
+      <Route path="/" element={<RootPage />} />
       <Route element={<AuthLayout />}>
         <Route path="*" element={<NotFoundPage />} />
       </Route>
