@@ -54,8 +54,7 @@
   // `wrangler secret put` and `.dev.vars` locally; never in this file.
   "vars": {
     "APP_NAME": "S8S Mail",
-    // TODO(deploy): pick between mailgun or resend
-    "MAIL_PROVIDER": "mailgun | resend",
+    "MAIL_PROVIDER": "mailgun",
     "MAILGUN_REGION": "us",
     // Sending domain configured at the provider (Mailgun) — TODO(deploy): real value in the local deploy config.
     "MAILGUN_DOMAIN": "example.com",
