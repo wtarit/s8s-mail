@@ -67,7 +67,7 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 
 ## Development
 
-Run from the repo root. Needs Node 24+ and pnpm 12.
+Run from the repo root. Needs Node 24+ and pnpm 12. To use a custom `wrangler.jsonc`, you set `S8S_WRANGLER_CONFIG` environment variable pointing to your custom config file. (e.g. `S8S_WRANGLER_CONFIG=wrangler.local.jsonc pnpm build`)
 
 ```bash
 pnpm install
