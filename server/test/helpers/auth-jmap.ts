@@ -78,7 +78,7 @@ export function b64url(bytes: Uint8Array): string {
     .replaceAll("=", "");
 }
 
-export const REDIRECT = "http://localhost:4173/oauth/callback";
+export const REDIRECT = `${BASE}/webmail/oauth/callback`;
 
 /** Starts an authorization-code + PKCE flow against the Bulwark client; returns the redirect. */
 export async function authorize(session: Session, resource?: string) {
@@ -123,7 +123,7 @@ export async function fetchToken(
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
-        origin: "http://localhost:4173",
+        origin: BASE,
       },
       body: new URLSearchParams({
         grant_type: "authorization_code",
@@ -145,7 +145,7 @@ export async function refreshTokens(refreshToken: string) {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
-        origin: "http://localhost:4173",
+        origin: BASE,
       },
       body: new URLSearchParams({
         grant_type: "refresh_token",

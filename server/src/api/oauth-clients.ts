@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { createOAuthClientRequest, oauthClient } from "@s8s/shared";
 import { eq } from "drizzle-orm";
 import { getAuth, type Auth } from "../auth";
-import { OAUTH_SCOPES, jmapResource } from "../auth/config";
+import { OAUTH_SCOPES, jmapResource, publicOrigin } from "../auth/config";
 import { getDb, schema } from "../db";
 import { ApiHttpError } from "./errors";
 
@@ -85,14 +85,14 @@ export async function createOAuthClient(
 
 /**
  * Idempotently creates/updates the first-party public client for the webmail (Bulwark):
- * client_id = BULWARK_CLIENT_ID, redirect `${WEBMAIL_ORIGIN}/oauth/callback`, PKCE, no secret,
+ * client_id = BULWARK_CLIENT_ID, redirect `<origin>/webmail/oauth/callback`, PKCE, no secret,
  * consent skipped. Also makes sure the JMAP OAuth resource exists and is linked to the client
  * (`oauth_client_resource`), so the client may request `resource=<origin>/jmap` and receive JWT
  * access tokens.
  */
 export async function ensureBulwarkClient(env: Env): Promise<OAuthClientView> {
   const clientId = env.BULWARK_CLIENT_ID;
-  const redirectUri = `${env.WEBMAIL_ORIGIN.replace(/\/+$/, "")}/oauth/callback`;
+  const redirectUri = `${publicOrigin(env)}/webmail/oauth/callback`;
   const auth = await getAuth(env);
   const ctx = await auth.$context;
   const fields = {

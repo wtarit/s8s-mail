@@ -65,7 +65,7 @@ describe("bootstrap", () => {
         clientId: "bulwark-lite",
         trusted: true,
         public: true,
-        redirectUris: ["http://localhost:4173/oauth/callback"],
+        redirectUris: [REDIRECT],
       },
     ]);
     const { location } = await authorize(admin);

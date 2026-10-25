@@ -91,7 +91,7 @@ describe("recovery link (magic link)", () => {
       expect((await request("/api/me", { cookie: pending })).status).toBe(401);
       expect((await request("/jmap/session", { cookie: pending })).status).toBe(401);
       const authorize = await request(
-        "/api/auth/oauth2/authorize?response_type=code&client_id=bulwark-lite&redirect_uri=http%3A%2F%2Flocalhost%3A4173%2Foauth%2Fcallback&scope=openid&code_challenge=abc&code_challenge_method=S256",
+        "/api/auth/oauth2/authorize?response_type=code&client_id=bulwark-lite&redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Fwebmail%2Foauth%2Fcallback&scope=openid&code_challenge=abc&code_challenge_method=S256",
         { cookie: pending },
       );
       expect(authorize.headers.get("location") ?? "").not.toContain("code=");

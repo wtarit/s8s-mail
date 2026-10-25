@@ -24,13 +24,14 @@ I want a low (or ideally) no maintainance email server that have $0 running cost
 
 **Frontends**
 - The auth/account/admin SPA is a static bundle. By default the main Worker serves it; it can also be deployed headless, with the API base URL set in a runtime `config.json`.
-- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see its `FORK.md`).
+- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see the note at the top of its README). `pnpm build` downloads the release pinned in `web/webmail.json` into `web/dist/webmail/`, and the Worker serves it at `/webmail/`, with its `config.json` generated from the Worker's vars.
+- Both are optional: without the `assets` block in `wrangler.jsonc`, the Worker is API-only.
 
 ## Architecture
 
 ```
 server/         the Worker: JMAP API, Better Auth, /.well-known/*, email() handler, Durable Object classes
-web/            auth/account/admin SPA (served by the Worker from web/dist)
+web/            auth/account/admin SPA, plus the webmail download (served by the Worker from web/dist)
 shared/         types and schemas shared by server and web
 docs/           deploy guide, design system, account security spec
 docs/research/  dated research notes. Not authoritative.
@@ -49,7 +50,7 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 - A future shared mailbox is its own account (`isPersonal: false`), so its own DO, with grants in D1.
 - DO-specific code sits behind an `AccountStore` interface, so a self-hosted adapter stays possible.
 
-**Hostnames.** A deployment uses `mail.<domain>` for the main Worker (JMAP, OIDC issuer, SPA) and `webmail.<domain>` for the Bulwark Lite Worker. Both are on the same site, so auth cookies are first-party. JMAP sends CORS headers for the webmail origin.
+**Hostnames.** A deployment uses one hostname, `mail.<domain>`, for JMAP, the OIDC issuer, the SPA and the webmail (`/webmail/`). Everything is same-origin, so there is no CORS, and signing in to the webmail reuses the account session.
 
 ## Tech stack
 
@@ -68,7 +69,7 @@ Run from the repo root. Needs Node 24+ and pnpm 12 (`packageManager` in `package
 pnpm install
 pnpm dev                 # wrangler dev on http://localhost:8787 (Worker + web/dist)
 pnpm --filter @s8s/web dev   # SPA hot reload (Vite; proxies /api, /jmap, /.well-known to :8787)
-pnpm build               # shared, then web (web/dist), then a wrangler deploy --dry-run of server
+pnpm build               # shared, then web (web/dist + webmail), then a wrangler deploy --dry-run of server
 pnpm lint                # oxlint
 pnpm format              # oxfmt  (pnpm format:check to verify only)
 pnpm typecheck
@@ -84,6 +85,8 @@ Server database and config scripts (run in `server/`, or `pnpm --filter @s8s/ser
 - `cf-typegen`: regenerates the committed `worker-configuration.d.ts`. Run it after any `wrangler.jsonc` change.
 - `opaque:setup`: creates `OPAQUE_SERVER_SETUP` in the ignored `.dev.vars`. Run once; see `server/src/auth/README.md`.
 - Better Auth schema: when the plugin set changes, regenerate `src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
+
+The webmail download is cached in `web/node_modules/.cache`. `WEBMAIL_ZIP=/path/to.zip` builds with a local Lite build instead, and `WEBMAIL_SKIP=1` skips it. To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
 
 `server/wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
 

@@ -1,6 +1,6 @@
 # Deploying s8s-mail
 
-Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored `server/wrangler.local.jsonc` or in Worker secrets. `mail.example.com` / `webmail.example.com` stand in for your hostnames.
+Deployment-specific values (zone, hostnames, resource ids, secrets) never go in tracked files. Keep them in the gitignored `server/wrangler.local.jsonc` or in Worker secrets. `mail.example.com` stands in for your hostname.
 
 ## 1. Resources (once)
 
@@ -14,7 +14,7 @@ pnpm --filter @s8s/server exec wrangler r2 bucket create s8s-mail-blobs
 1. Copy `server/wrangler.jsonc` to `server/wrangler.local.jsonc`.
 2. Set:
    - the real `database_id`;
-   - `PUBLIC_URL` (`https://mail.example.com`) and `WEBMAIL_ORIGIN` (`https://webmail.example.com`);
+   - `PUBLIC_URL` (`https://mail.example.com`);
    - `MAILGUN_DOMAIN`, `SYSTEM_MAIL_FROM`;
    - the custom domain route: `"routes": [{ "pattern": "mail.example.com", "custom_domain": true }]`.
 
@@ -57,23 +57,9 @@ curl -X POST https://mail.example.com/api/bootstrap \
 
 This only works while there are no users. The invite link goes to the recovery address and is also returned in the response.
 
-## 6. Webmail (Bulwark Lite, from the fork's `feat/lite-generic-oidc` or later)
+## 6. Webmail
 
-```bash
-CI=true LITE_TARGET=static LITE_LOCALES=en LITE_JMAP_SERVER_URL=https://mail.example.com npm run build:lite
-```
-
-Then edit `out/config.json`: `"oauthClientId": "bulwark-lite"`, `"oauthOnly": true`, `"oauthResource": "https://mail.example.com/jmap"`, `"appName"`.
-
-- `oauthResource` (fork branch `feat/lite-oidc-resource` or later) is **required**: it makes the webmail request JWT access tokens, the only Bearer tokens JMAP accepts. It must equal `${PUBLIC_URL origin}/jmap` exactly. Without it, the webmail gets opaque tokens and every JMAP request fails with 401.
-
-- **SSO-only is required.** Bulwark's password form would send the account password as Basic auth, and our JMAP endpoint only accepts **app passwords** via Basic.
-
-Workers Static Assets quirks (Lite's `_redirects` targets Netlify/Pages):
-- Rewrite targets ending in `/index.html` loop, because assets strip `index.html` from URLs. Rewrite `/x/mail/*  /x/mail/index.html  200` to `/x/mail/*  /x/mail/  200`.
-- At most **100 dynamic redirect rules**. 27 locales × 5 surfaces exceeds it, so build with `LITE_LOCALES`.
-
-Deploy as an assets-only Worker with `"assets": { "directory": "<out>", "not_found_handling": "404-page" }` and a custom-domain route for `webmail.example.com`. The Bulwark OAuth client (`bulwark-lite`, redirect `${WEBMAIL_ORIGIN}/oauth/callback`, trusted, PKCE) is created by bootstrap, together with the JMAP OAuth resource (`${PUBLIC_URL origin}/jmap`) it must be linked to so that the webmail gets JWT access tokens. On an existing deployment, call `POST /api/admin/oauth-clients/ensure-defaults` (as an admin) once after deploying this change, before the webmail starts sending `resource` (an unlinked client gets `invalid_target`).
+Nothing to deploy separately. `pnpm build` (step 3) puts the webmail release pinned in `web/webmail.json` into `web/dist/webmail/`, and the Worker serves it at `https://mail.example.com/webmail/`. Its `config.json` comes from the Worker's vars, and bootstrap registers its OAuth client (`bulwark-lite`, redirect `https://mail.example.com/webmail/oauth/callback`).
 
 ## Notes
 

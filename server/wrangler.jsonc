@@ -8,13 +8,14 @@
   "observability": { "enabled": true, "traces": { "enabled": true } },
   "secrets": { "required": ["BETTER_AUTH_SECRET", "BOOTSTRAP_TOKEN", "OPAQUE_SERVER_SETUP"] },
 
-  // The SPA (web/dist). In SPA mode, browser navigations are answered with index.html
-  // without running the Worker, so every path a browser navigates to that the Worker must
-  // handle (OAuth authorize, /.well-known/*, downloads) has to be in run_worker_first.
+  // The SPA and the webmail under /webmail/ (web/dist, see `pnpm build`). Files are served
+  // without running the Worker; a path with no file goes to the Worker, which answers with
+  // the SPA's index.html or the webmail's deep-link shell (src/assets.ts). Worker routes
+  // stay in run_worker_first so that a file can never shadow them.
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
+    "not_found_handling": "none",
     "run_worker_first": ["/api/*", "/jmap/*", "/.well-known/*"],
   },
 
@@ -56,10 +57,8 @@
     "SYSTEM_MAIL_FROM": "S8S Mail <no-reply@example.com>",
     // Public origin of this Worker (Better Auth baseURL / OIDC issuer) — TODO(deploy).
     "PUBLIC_URL": "http://localhost:8787",
-    // Origin of the webmail (Bulwark Lite). Allowed for CORS on the OIDC/JMAP routes and used
-    // for the Bulwark OAuth client's redirect URI (`${WEBMAIL_ORIGIN}/oauth/callback`) — TODO(deploy).
-    "WEBMAIL_ORIGIN": "http://localhost:4173",
-    // client_id of the first-party public OAuth client created for the webmail.
+    // client_id of the first-party public OAuth client created for the webmail (redirect
+    // `${PUBLIC_URL origin}/webmail/oauth/callback`).
     "BULWARK_CLIENT_ID": "bulwark-lite",
   },
 }

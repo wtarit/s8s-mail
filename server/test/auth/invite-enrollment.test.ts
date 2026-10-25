@@ -155,7 +155,7 @@ describe("invite enrollment", () => {
     it("has no JMAP and no OAuth: no authorization code, no token, no userinfo", async () => {
       expect((await request("/jmap/session", { cookie: session.cookie })).status).toBe(401);
       const authorize = await request(
-        "/api/auth/oauth2/authorize?response_type=code&client_id=bulwark-lite&redirect_uri=http%3A%2F%2Flocalhost%3A4173%2Foauth%2Fcallback&scope=openid&code_challenge=abc&code_challenge_method=S256",
+        "/api/auth/oauth2/authorize?response_type=code&client_id=bulwark-lite&redirect_uri=http%3A%2F%2Flocalhost%3A8787%2Fwebmail%2Foauth%2Fcallback&scope=openid&code_challenge=abc&code_challenge_method=S256",
         { cookie: session.cookie },
       );
       expect(authorize.status).toBe(403);
