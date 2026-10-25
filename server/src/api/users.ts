@@ -1,4 +1,4 @@
-import type { AdminUser, Invite, Role } from "@s8s/shared";
+import type { AdminUser, Invite, Role } from "#shared";
 import { and, asc, count, eq, gt, inArray, isNull, max, sql } from "drizzle-orm";
 import { getAuth } from "../auth";
 import { runInBackground } from "../auth/request-context";

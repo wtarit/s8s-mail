@@ -1,4 +1,4 @@
-import type { MeResponse } from "@s8s/shared";
+import type { MeResponse } from "#shared";
 import { asc, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import { loadUserFactors } from "../auth/factors/load";

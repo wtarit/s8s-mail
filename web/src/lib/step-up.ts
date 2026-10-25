@@ -1,4 +1,4 @@
-import type { FactorName, MeResponse } from "@s8s/shared";
+import type { FactorName, MeResponse } from "#shared";
 import { ApiRequestError } from "@/lib/api";
 
 /** What an account change still needs from this session. */

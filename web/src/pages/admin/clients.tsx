@@ -3,7 +3,7 @@ import {
   createOAuthClientResponse,
   type oauthClient,
   oauthClientListResponse,
-} from "@s8s/shared";
+} from "#shared";
 import { IconApps, IconPlus, IconTrash } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";

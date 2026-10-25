@@ -15,7 +15,7 @@ import type { BodyPart, EmailAddress } from "./types";
  *
  * Hand-written SQL that Drizzle cannot express (the FTS5 table and the change-log
  * triggers) lives in `drizzle/do/0001_*.sql`; keep it in sync when columns change.
- * Regenerate with `pnpm --filter @s8s/server db:generate:do`.
+ * Regenerate with `pnpm db:generate:do`.
  */
 
 /** Key/value store: `accountId` (DOs do not know their own name), future counters. */

@@ -1,4 +1,4 @@
-import type { FactorName, MeResponse } from "@s8s/shared";
+import type { FactorName, MeResponse } from "#shared";
 import {
   createContext,
   useCallback,

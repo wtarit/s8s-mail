@@ -24,18 +24,21 @@ I want a low (or ideally) no maintainance email server that have $0 running cost
 
 **Frontends**
 - The auth/account/admin SPA is a static bundle. By default the main Worker serves it; it can also be deployed headless, with the API base URL set in a runtime `config.json`.
-- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see the note at the top of its README). `pnpm build` downloads the release pinned in `web/webmail.json` into `web/dist/webmail/`, and the Worker serves it at `/webmail/`, with its `config.json` generated from the Worker's vars.
+- Webmail is Bulwark Lite, patched to sign in through OIDC, in our fork [wtarit/s8s-mail-webmail](https://github.com/wtarit/s8s-mail-webmail) (see the note at the top of its README). `pnpm dev` and `pnpm build` download the release pinned in `web/webmail.json` into the gitignored `web/public/webmail/` (the build copies it into `web/dist/webmail/`), and the Worker serves it at `/webmail/`, with its `config.json` generated from the Worker's vars.
 - Both are optional: without the `assets` block in `wrangler.jsonc`, the Worker is API-only.
 
 ## Architecture
 
 ```
+wrangler.jsonc  the one Worker config (tracked placeholders; real values in wrangler.local.jsonc)
 server/         the Worker: JMAP API, Better Auth, /.well-known/*, email() handler, Durable Object classes
 web/            auth/account/admin SPA, plus the webmail download (served by the Worker from web/dist)
-shared/         types and schemas shared by server and web
+shared/         types and schemas shared by server and web, imported as `#shared`
 docs/           deploy guide, design system, account security spec
 docs/research/  dated research notes. Not authoritative.
 ```
+
+One package (one `package.json`, one `node_modules`), three source folders, built by one Vite config (`vite.config.ts`, with the Cloudflare Vite plugin): `vite build` bundles the SPA and the Worker together (Rolldown, minified, lazy imports as separate modules). Each folder has its own `tsconfig.json` (Worker types vs DOM) and its own vitest project (workerd, jsdom, Node). oxlint forbids imports across folders: `server/` and `web/` share code only through `#shared`, and `server/` never imports `web/`.
 
 Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`, `db`, `store`).
 
@@ -54,41 +57,45 @@ Module internals live in the READMEs under `server/src/` (`auth`, `jmap`, `mail`
 
 ## Tech stack
 
-- TypeScript in a pnpm workspace (`server`, `web`, `shared`).
+- TypeScript, one pnpm package with `server/`, `web/` and `shared/` folders.
 - Server: Cloudflare Workers, [Hono](https://hono.dev), [Better Auth](https://better-auth.com) (passkey, OAuth provider, API key, admin, magic link, plus our OPAQUE plugin).
 - Data: Drizzle ORM for D1 and for the account DOs (`drizzle-orm/durable-sqlite`).
 - Validation: Zod v4, with `@hono/zod-validator` on SPA API routes.
 - SPA: Vite, React, shadcn/ui (Tailwind). See [docs/design-system.md](docs/design-system.md).
+- Build: Vite 8 with `@cloudflare/vite-plugin` for both the SPA and the Worker.
 - Tooling: oxlint and oxfmt, vitest (the server suite runs inside workerd).
 
 ## Development
 
-Run from the repo root. Needs Node 24+ and pnpm 12 (`packageManager` in `package.json`; use Corepack).
+Run from the repo root. Needs Node 24+ and pnpm 12. To use a custom `wrangler.jsonc`, you set `S8S_WRANGLER_CONFIG` environment variable pointing to your custom config file. (e.g. `S8S_WRANGLER_CONFIG=wrangler.local.jsonc pnpm build`)
 
 ```bash
 pnpm install
-pnpm dev                 # wrangler dev on http://localhost:8787 (Worker + web/dist)
-pnpm --filter @s8s/web dev   # SPA hot reload (Vite; proxies /api, /jmap, /.well-known to :8787)
-pnpm build               # shared, then web (web/dist + webmail), then a wrangler deploy --dry-run of server
+pnpm dev                 # vite dev on http://localhost:8787: SPA with hot reload, the Worker in workerd, the webmail
+pnpm build               # typecheck, webmail, then vite build (web/dist + dist/)
+pnpm preview             # the built app on :8787
 pnpm lint                # oxlint
 pnpm format              # oxfmt  (pnpm format:check to verify only)
-pnpm typecheck
-pnpm test                # vitest in every package
-pnpm coverage            # istanbul; per-package thresholds fail the run on regression
-pnpm --filter @s8s/server test   # one package (also @s8s/web, @s8s/shared)
+pnpm typecheck           # one tsc per folder
+pnpm test                # vitest: server (workerd), web (jsdom), shared projects
+pnpm coverage            # istanbul; per-folder thresholds fail the run on regression
+pnpm test --project server   # one project (also web, shared)
+pnpm wrangler <command>  # any wrangler command; it reads ./wrangler.jsonc and ./.dev.vars
 ```
 
-Server database and config scripts (run in `server/`, or `pnpm --filter @s8s/server <script>`):
+Database and config scripts, also run from the root:
 
-- `db:generate:d1`: D1 schema `src/db/schema.ts` to `drizzle/d1/`. Apply with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy.
-- `db:generate:do`: account-DO schema `src/store/schema.ts` to `drizzle/do/`. `AccountDO` applies it on startup.
-- `cf-typegen`: regenerates the committed `worker-configuration.d.ts`. Run it after any `wrangler.jsonc` change.
+- `db:generate:d1`: D1 schema `server/src/db/schema.ts` to `server/drizzle/d1/`. Apply with `db:migrate:local`, or `wrangler d1 migrations apply DB --remote` at deploy.
+- `db:generate:do`: account-DO schema `server/src/store/schema.ts` to `server/drizzle/do/`. `AccountDO` applies it on startup.
+- `cf-typegen`: regenerates the committed `server/worker-configuration.d.ts`. Run it after any `wrangler.jsonc` change.
 - `opaque:setup`: creates `OPAQUE_SERVER_SETUP` in the ignored `.dev.vars`. Run once; see `server/src/auth/README.md`.
-- Better Auth schema: when the plugin set changes, regenerate `src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
+- Better Auth schema: when the plugin set changes, regenerate `server/src/db/auth-schema.ts` with `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts`, then `pnpm db:generate:d1`. The `@better-auth/cli` package is stuck at 1.4 and `auth migrate` cannot reach D1.
 
-The webmail download is cached in `web/node_modules/.cache`. `WEBMAIL_ZIP=/path/to.zip` builds with a local Lite build instead, and `WEBMAIL_SKIP=1` skips it. To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
+Local D1, DO and R2 data live in `.wrangler/state` for both `pnpm dev` and `pnpm preview`. The build also copies the secrets from `.dev.vars` to `dist/.dev.vars` (mode 0600) for `vite preview`; `wrangler deploy` does not upload it.
 
-`server/wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
+The webmail download is cached in `node_modules/.cache/s8s-webmail`, and `pnpm webmail` only re-extracts it when the pinned version changes. `WEBMAIL_ZIP=/path/to.zip` uses a local Lite build instead, and `WEBMAIL_SKIP=1` removes it (`/webmail/` then serves a 404). To update it, change `version` and `sha256` in `web/webmail.json` (the `.sha256` file next to the release zip).
+
+`wrangler.jsonc` holds placeholder resource ids. For a real deployment see [docs/deploy.md](docs/deploy.md).
 
 ## Limits and compromises
 

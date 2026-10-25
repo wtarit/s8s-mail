@@ -1,4 +1,4 @@
-import type { AdminUser, Role } from "@s8s/shared";
+import type { AdminUser, Role } from "#shared";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { FormError } from "@/components/form-error";

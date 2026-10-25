@@ -1,4 +1,4 @@
-import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig, type RuntimeConfig } from "@s8s/shared";
+import { DEFAULT_RUNTIME_CONFIG, parseRuntimeConfig, type RuntimeConfig } from "#shared";
 import { createContext, useContext, type ReactNode } from "react";
 
 const RuntimeConfigContext = createContext<RuntimeConfig>(DEFAULT_RUNTIME_CONFIG);

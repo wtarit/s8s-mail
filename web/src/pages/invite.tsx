@@ -1,4 +1,4 @@
-import { inviteInfoResponse, inviteSessionResponse, type InviteInfoResponse } from "@s8s/shared";
+import { inviteInfoResponse, inviteSessionResponse, type InviteInfoResponse } from "#shared";
 import { IconAlertCircle, IconCircleCheck } from "@tabler/icons-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";

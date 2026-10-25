@@ -1,4 +1,4 @@
-import type { Role } from "@s8s/shared";
+import type { Role } from "#shared";
 import { Label } from "@/components/ui/label";
 import {
   Select,

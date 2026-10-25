@@ -1,4 +1,4 @@
-import { aliasListResponse, type AdminUser } from "@s8s/shared";
+import { aliasListResponse, type AdminUser } from "#shared";
 import { IconTrash } from "@tabler/icons-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";

@@ -1,4 +1,4 @@
-import { addDomainRequest, updateDomainRequest } from "@s8s/shared";
+import { addDomainRequest, updateDomainRequest } from "#shared";
 import { asc, count, eq } from "drizzle-orm";
 import { Hono } from "hono";
 import type { AppEnv } from "../auth/types";

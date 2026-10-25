@@ -19,7 +19,7 @@ import { ApiRequestError, unwrapAuth } from "@/lib/api";
 import { getAuthClient } from "@/lib/auth-client";
 import { pendingFactors, type StepUpRequirement } from "@/lib/step-up";
 import { useT } from "@/i18n";
-import type { FactorName } from "@s8s/shared";
+import type { FactorName } from "#shared";
 
 interface StepUpDialogProps {
   requirement: StepUpRequirement;

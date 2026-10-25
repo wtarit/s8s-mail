@@ -7,7 +7,7 @@ Better Auth setup and auth middleware.
 - `enrollment/`: invite enrollment: the enrollment-only session and the atomic "save first factor + full reset" batch.
 - `opaque/`: OPAQUE password endpoints (sign-in, set/change, step-up) and their encrypted handshake state.
 - `request-context.ts`: `runInBackground()` (`waitUntil` via AsyncLocalStorage).
-- Schema: `../db/auth-schema.ts` is generated. After changing the plugin set, regenerate it with `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (in `server/`), then `pnpm db:generate:d1`. See the root README, Development.
+- Schema: `../db/auth-schema.ts` is generated. After changing the plugin set, regenerate it from the repo root with `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts`, then `pnpm db:generate:d1`. See the root README, Development.
 
 OPAQUE uses the exact published `@serenity-kit/opaque@1.1.0` cryptography. Server
 commands run `opaque:prepare` to hash-check its source, extract the unchanged
@@ -17,8 +17,8 @@ import. Generated artifacts, MIT notices, and provenance live in the ignored
 package's normal runtime entry. An upgrade requires reviewing the pinned hashes
 and loader transformation in `server/scripts/prepare-opaque.mjs`.
 
-Run `pnpm --filter @s8s/server opaque:setup` once to append `OPAQUE_SERVER_SETUP`
-to the ignored `server/.dev.vars` with mode 0600. It preserves other bindings,
+Run `pnpm opaque:setup` once to append `OPAQUE_SERVER_SETUP`
+to the ignored `.dev.vars` (repo root) with mode 0600. It preserves other bindings,
 refuses to replace an existing setup, and never prints the secret. Back up the
 setup securely and provision the same value as a production Worker secret;
 changing or losing it invalidates existing password registrations. Local files

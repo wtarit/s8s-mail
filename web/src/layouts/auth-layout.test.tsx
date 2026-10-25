@@ -6,7 +6,7 @@ import { RuntimeConfigProvider } from "@/config/runtime-config";
 import { AuthLayout } from "@/layouts/auth-layout";
 import { LoginPage } from "@/pages/login";
 import { ThemeProvider } from "@/theme/theme";
-import { parseRuntimeConfig } from "@s8s/shared";
+import { parseRuntimeConfig } from "#shared";
 import { t } from "@/i18n";
 
 function renderLogin(config: unknown = {}) {

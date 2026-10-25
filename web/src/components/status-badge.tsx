@@ -1,4 +1,4 @@
-import type { UserStatus } from "@s8s/shared";
+import type { UserStatus } from "#shared";
 import { Badge } from "@/components/ui/badge";
 import { useT, type MessageKey } from "@/i18n";
 import { cn } from "@/lib/utils";

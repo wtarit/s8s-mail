@@ -5,10 +5,12 @@ Serverless JMAP mail server on Cloudflare Workers. Features, architecture and co
 ## Tooling
 
 - **pnpm only**, never npm or yarn. Wrangler is a local dev dependency (`pnpm wrangler …`); never install it globally.
+- **One package.** Run every command from the repo root: no `--filter`, no `cd server`. `server/`, `web/` and `shared/` never import each other by path; shared code goes through `#shared` (oxlint enforces it).
 - Before finishing a change: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
 - **Max 300 lines per file**, tests included (oxlint `max-lines`). Split along real seams and keep the import path stable (`foo.ts` → `foo/index.ts`).
-- After editing `wrangler.jsonc`, run `cf-typegen`: `worker-configuration.d.ts` is committed.
-- After changing the Better Auth plugin set, regenerate the schema in `server/`: `pnpm dlx auth@1.7.7 generate --config auth.config.ts --output src/db/auth-schema.ts` (the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`. `auth migrate` cannot reach D1.
+- After editing `wrangler.jsonc`, run `pnpm cf-typegen`: `server/worker-configuration.d.ts` is committed.
+- **Vite builds and serves everything** (`vite.config.ts`, Cloudflare Vite plugin). Deploy only `dist/wrangler.json` from a full `pnpm build`: a Worker-only Vite build silently drops `assets`. Wrangler `rules` are ignored by Vite; `.sql` and `.wasm` imports work without them.
+- After changing the Better Auth plugin set, regenerate the schema: `pnpm dlx auth@1.7.7 generate --config server/auth.config.ts --output server/src/db/auth-schema.ts` (the `@better-auth/cli` package is stuck at 1.4), then `pnpm db:generate:d1`. `auth migrate` cannot reach D1.
 
 ## Ask the owner first
 
@@ -17,7 +19,7 @@ Serverless JMAP mail server on Cloudflare Workers. Features, architecture and co
 ## Private data
 
 - The test zone, hostnames, Mailgun domain and test mailbox are in `CLAUDE.local.md` (gitignored). Read it before deploying or running end-to-end mail tests.
-- **Never put personal addresses, the test domain or account details in tracked files**: code, wrangler config, fixtures, tests, docs or commit messages. Use `example.com`. Deployment-specific wrangler values go in the gitignored `server/wrangler.local.jsonc`.
+- **Never put personal addresses, the test domain or account details in tracked files**: code, wrangler config, fixtures, tests, docs or commit messages. Use `example.com`. Deployment-specific wrangler values go in the gitignored `wrangler.local.jsonc`.
 
 ## Scope guardrails
 

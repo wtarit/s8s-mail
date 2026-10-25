@@ -9,6 +9,7 @@
     "**/.wrangler/**",
     "**/worker-configuration.d.ts",
     "web/src/components/ui/**",
+    "web/public/**",
     "**/drizzle/**",
     "pnpm-lock.yaml",
     "**/*.md"

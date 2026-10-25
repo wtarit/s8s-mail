@@ -158,7 +158,11 @@ CLAUDE.local.md
 !.dev.vars.example
 
 # Local deploy config with real ids/hostnames (never commit)
-wrangler.local.jsonc
+wrangler.local*.jsonc
 
 # Verified Serenity static-Wasm build artifacts (recreated by server scripts)
 server/src/auth/.generated/
+
+# Webmail release extracted by web/scripts/fetch-webmail.mjs (AGPL; never commit)
+web/public/webmail/
+web/public/_headers
