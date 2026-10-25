@@ -2,14 +2,14 @@
 S(erveles)s Mail - Email server on Cloudflare worker.
 
 ## Background
-I want a low (or ideally) no maintainance email server that have $0 running cost. It need to be usable in Cloudflare worker free tier because for worker paid, the minimum is $5 and at that price you can get a VPS and run [mail-in-a-box](https://mailinabox.email/) or [stalwart](https://stalw.art/).
+I want a low (or ideally no) maintenance email server that has $0 running cost. It needs to be usable on the Cloudflare Workers free tier, because for Workers Paid the minimum is $5, and at that price you can get a VPS and run [mail-in-a-box](https://mailinabox.email/) or [stalwart](https://stalw.art/).
 
 ## Features
 
 **Mail**
 - Receives mail through Cloudflare Email Routing (Worker `email()` handler).
 - Mailboxes are served over **JMAP only** (RFC 8620 core, RFC 8621 mail). Email only: no CardDAV/CalDAV.
-- Outbound goes through a pluggable provider. V1 ships Mailgun (HTTP API), one active provider per deployment. (see [Consideration in choosing outbound email provider](docs/email-sending-provider.md) for full details)
+- Outbound goes through a pluggable provider. V1 ships Mailgun (HTTP API), one active provider per deployment (see [Considerations in choosing an outbound email provider](docs/email-sending-provider.md) for full details).
 
 **Accounts and addresses**
 - Multi-user. Admins create accounts and hand over an invite link; there is no public signup.
